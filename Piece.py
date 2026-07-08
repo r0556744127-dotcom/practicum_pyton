@@ -9,14 +9,9 @@ class Piece:
 
     @staticmethod
     def is_legal_move(board, start_row: int, start_col: int, end_row: int, end_col: int) -> bool:
-        """
-        בודקת חוקיות מהלך כולל חוסמים בדרך ואכילת כלי אויב.
-        """
-        # 1. עמידה במקום אינה מהלך חוקי
         if start_row == end_row and start_col == end_col:
             return False
 
-        # 2. שליפת הכלים בנקודת ההתחלה והסוף
         moving_piece = board.get_piece_at(start_row, start_col)
         target_piece = board.get_piece_at(end_row, end_col)
         
@@ -26,24 +21,42 @@ class Piece:
         piece_type = moving_piece[1]
         moving_color = moving_piece[0]
 
-        # 3. בדיקה אם יעד התנועה מכיל כלי מאותו הצבע
+        # חוק כללי: לא נוחתים על כלי מאותו צבע
         if target_piece != '.' and target_piece[0] == moving_color:
             return False
 
-        # חישוב מרחקים
-        dr = abs(end_row - start_row)
-        dc = abs(end_col - start_col)
+        row_diff = end_row - start_row
+        col_diff = end_col - start_col
+        dr = abs(row_diff)
+        dc = abs(col_diff)
 
-        # 4. בדיקת דפוס תנועה גיאומטרי וחוסמים בדרך לפי סוג הכלי
-        if piece_type == 'K':      # מלך
+        # לוגיקת חייל (Pawn)
+        if piece_type == 'P':
+            # לפי טסט 1: wP נע משורה 1 לשורה 0 (1- = row_diff)
+            # לפי טסט 2: bP נע משורה 1 לשורה 2 (1 = row_diff)
+            valid_direction = -1 if moving_color == 'w' else 1
+            
+            # 1. צעד אחד ישר קדימה
+            if col_diff == 0 and row_diff == valid_direction:
+                return target_piece == '.'
+                
+            # 2. אכילה באלכסון (טסט 5: מ-1,1 ל-0,0 כאשר ב-0,0 יש bR)
+            if dc == 1 and row_diff == valid_direction:
+                return target_piece != '.' and target_piece[0] != moving_color
+
+            # כל תנועה אחרת של חייל (כולל צעד כפול, שכרגע מסומן בטסטים כ-invalid)
+            return False
+
+        # מלך
+        if piece_type == 'K':
             return dr <= 1 and dc <= 1
             
-        elif piece_type == 'N':    # פרש (יכול לקפוץ מעל חוסמים, לכן אין בדיקת מסלול)
+        # פרש
+        if piece_type == 'N':
             return (dr == 2 and dc == 1) or (dr == 1 and dc == 2)
 
-        # עבור כלים שנעים למרחק (צריח, רץ, מלכה) - נבדוק חסימות בדרך
-        elif piece_type in ['R', 'B', 'Q']:
-            # בדיקת התאמה גיאומטרית בסיסית
+        # צריח, רץ, מלכה
+        if piece_type in ['R', 'B', 'Q']:
             if piece_type == 'R' and not (dr == 0 or dc == 0):
                 return False
             if piece_type == 'B' and not (dr == dc):
@@ -51,17 +64,15 @@ class Piece:
             if piece_type == 'Q' and not (dr == 0 or dc == 0 or dr == dc):
                 return False
 
-            # קביעת כיוון הצעדים (1, 0, או 1-)
-            step_row = 0 if end_row == start_row else (1 if end_row > start_row else -1)
-            step_col = 0 if end_col == start_col else (1 if end_col > start_col else -1)
+            step_row = 0 if row_diff == 0 else (1 if row_diff > 0 else -1)
+            step_col = 0 if col_diff == 0 else (1 if col_diff > 0 else -1)
 
-            # סריקת המסלול (לא כולל נקודת ההתחלה ונקודת הסוף)
             current_row = start_row + step_row
             current_col = start_col + step_col
 
             while current_row != end_row or current_col != end_col:
                 if board.get_piece_at(current_row, current_col) != '.':
-                    return False  # נמצא חוסם בדרך!
+                    return False
                 current_row += step_row
                 current_col += step_col
 
