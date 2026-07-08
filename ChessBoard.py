@@ -1,36 +1,50 @@
-import sys
-
-class ChessBoardParser:
-    """אחראית על קריאת קלט גולמי ועיבודו לכדי אובייקט של לוח."""
+class ChessBoard:
+    """מייצגת את לוח המשחק, מנהלת את משבצות הלוח ובודקת תקינות מיקומים."""
     
-    def __init__(self, input_stream=sys.stdin):
-        self._stream = input_stream
+    def __init__(self, cell_size: int = 100):
+        self._grid = []
+        self.cell_size = cell_size
 
-    def parse(self):
-        from ChessBoard import ChessBoard  
-        
-        board = ChessBoard()
-        
-        # שמירת השורות שנקראו כדי שנוכל להחזיר אותן לשימוש ב-main במידת הצורך
-        self.remaining_lines = []
+    def add_row(self, row_tokens: list) -> None:
+        """מוסיפה שורה חדשה של תאים ללוח."""
+        self._grid.append(row_tokens)
 
-        for line in self._stream:
-            clean_line = line.strip()
-            if not clean_line:
-                continue
-                
-            # אם נתקלנו בכותרת של הלוח או הפקודות - פשוט מדלגים עליה
-            if clean_line.lower().startswith(('לוח:', 'פקודות:', 'board:', 'commands:')):
-                continue
+    def get_piece_at(self, row: int, col: int) -> str:
+        """מחזירה את ייצוג הכלי במיקום המבוקש."""
+        if 0 <= row < len(self._grid) and 0 <= col < len(self._grid[row]):
+            return self._grid[row][col]
+        return '.'
 
-            tokens = clean_line.split()
+    def set_piece_at(self, row: int, col: int, piece: str) -> None:
+        """מציבה כלי במיקום המבוקש בלוח."""
+        if 0 <= row < len(self._grid) and 0 <= col < len(self._grid[row]):
+            self._grid[row][col] = piece
+
+    def is_empty_cell(self, row: int, col: int) -> bool:
+        """בודקת האם המשבצת נתונה ריקה."""
+        return self.get_piece_at(row, col) == '.'
+
+    def is_friendly_piece(self, row: int, col: int, selected_cell: tuple) -> bool:
+        """בודקת האם המשבצת ביעד מכילה כלי מאותו הצבע של הכלי שנבחר."""
+        target_piece = self.get_piece_at(row, col)
+        if target_piece == '.':
+            return False
             
-            # אם המילה הראשונה היא פקודה מוכרת, סימן שסיימנו לקרוא את הלוח
-            if tokens[0].lower() in ['click', 'wait', 'print', 'לחץ', 'המתן', 'הדפס', 'לוח']:
-                self.remaining_lines.append(clean_line)
-                break
-                
-            # אחרת, זו שורת לוח רגילה
-            board.add_row(tokens)
+        start_row, start_col = selected_cell
+        selected_piece = self.get_piece_at(start_row, start_col)
+        
+        # השוואת התו הראשון (w או b)
+        return target_piece[0] == selected_piece[0]
 
-        return board
+    def convert_coordinates(self, x: int, y: int) -> tuple:
+        """ממירה קואורדינטות פיזיות (פיקסלים) לאינדקסים במטריצה (שורה, עמודה)."""
+        col = x // self.cell_size
+        row = y // self.cell_size
+        
+        if 0 <= row < len(self._grid) and len(self._grid) > 0 and 0 <= col < len(self._grid[0]):
+            return (row, col)
+        return None
+
+    def get_formatted_board(self) -> str:
+        """מחזירה את תצוגת הלוח כמחרוזת מוכנה להדפסה."""
+        return '\n'.join(' '.join(row) for row in self._grid)

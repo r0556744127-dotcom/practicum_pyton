@@ -1,43 +1,51 @@
+from ChessBoard import ChessBoard
+from Piece import Piece
+
 class ChessGame:
-    def __init__(self, board):
-        self.board = board
-        self.selected_cell = None  # ישמור (row, col) אם נבחר כלי
-        self.game_clock_ms = 0     # שעון המשחק
+    """מנהלת את מצב המשחק, תורות השחקנים, והלוגיקה הדינמית של המהלכים."""
+    
+    def __init__(self, board: ChessBoard):
+        self._board = board
+        self._selected_cell = None  # שומר קואורדינטות (row, col) של הכלי הנבחר
 
     def handle_click(self, x: int, y: int) -> None:
-        """מנהלת את לוגיקת הלחיצות על פי חוקי המשחק."""
-        coords = self.board.convert_coordinates(x, y)
+        coords = self._board.convert_coordinates(x, y)
         if coords is None:
-            return  # מחוץ ללוח - מתעלמים
+            return  # לחיצה מחוץ לגבולות הלוח - מתעלמים
 
         row, col = coords
 
-        # מצב א': אין כלי נבחר כרגע
-        if self.selected_cell is None:
-            if self.board.is_empty_cell(row, col):
-                return  # תא ריק ללא בחירה - מתעלמים
-            else:
-                self.selected_cell = (row, col)  # בחירת כלי
-                
-        # מצב ב': יש כבר כלי נבחר
+        if self._selected_cell is None:
+            # שלב הבחירה: בוחרים כלי רק אם המשבצת אינה ריקה
+            if not self._board.is_empty_cell(row, col):
+                self._selected_cell = (row, col)
         else:
-            if self.board.is_friendly_piece(row, col, self.selected_cell):
-                self.selected_cell = (row, col)  # החלפת בחירה בכלי ידידותי
-            else:
-                # לחיצה על תא אחר -> ביצוע המהלך
-                src_row, src_col = self.selected_cell
-                self._execute_move(src_row, src_col, row, col)
-                self.selected_cell = None  # איפוס הבחירה
+            # שלב ביצוע המהלך
+            start_row, start_col = self._selected_cell
+            
+            # אם לחצו על כלי ידידותי אחר - מחליפים את הבחירה לכלי החדש
+            if self._board.is_friendly_piece(row, col, self._selected_cell):
+                self._selected_cell = (row, col)
+                return
 
-    def _execute_move(self, from_row: int, from_col: int, to_row: int, to_col: int) -> None:
-        """מבצעת העברת כלי ממשבצת אחת למשבצת שנייה ומעדכנת את הלוח."""
-        piece = self.board.get_piece_at(from_row, from_col)
-        self.board.set_piece_at(from_row, from_col, '.')
-        self.board.set_piece_at(to_row, to_col, piece)
+            # שליפת סוג הכלי (לדוגמה 'wK' -> לוקחים את 'K')
+            piece_token = self._board.get_piece_at(start_row, start_col)
+            piece_type = piece_token[1]
+
+            # בדיקת חוקיות התנועה באמצעות הפונקציה הגיאומטרית
+            if Piece.is_legal_move(piece_type, start_row, start_col, row, col):
+                # ביצוע המהלך ועדכון הלוח
+                self._board.set_piece_at(row, col, piece_token)
+                self._board.set_piece_at(start_row, start_col, '.')
+                self._selected_cell = None  # איפוס הבחירה לאחר מהלך מוצלח
+            else:
+                # מהלך לא חוקי - מתעלמים ומבטלים את הבחירה הנוכחית
+                self._selected_cell = None
 
     def handle_wait(self, ms: int) -> None:
-        self.game_clock_ms += ms
+        """מטפל בפקודת המתנה."""
+        pass
 
     def handle_print(self) -> None:
-        if not self.board.is_empty():
-            print(self.board.get_formatted_board())
+        """מדפיס את מצב הלוח הנוכחי לקונסול."""
+        print(self._board.get_formatted_board())

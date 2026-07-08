@@ -1,30 +1,35 @@
 import sys
 
 class ChessBoardParser:
-     """אחראית על קריאת קלט גולמי ועיבודו לכדי אובייקט של לוח."""
+    """אחראית על קריאת קלט גולמי ועיבודו לכדי אובייקט של לוח."""
+    
     def __init__(self, input_stream=sys.stdin):
         self._stream = input_stream
+        self.remaining_lines = []
 
     def parse(self):
         from ChessBoard import ChessBoard  
         
         board = ChessBoard()
-        has_started_reading = False
+        self.remaining_lines = []
 
         for line in self._stream:
-            tokens = line.strip().split()
-            
-            if not tokens:
-                continue 
+            clean_line = line.strip()
+            if not clean_line:
+                continue
                 
-           
-            if has_started_reading and len(board._matrix) > 0:
-               
-                from Piece import Piece
-                if not Piece.is_valid(tokens[0]):
-                    break
+            # אם נתקלנו בכותרת של הלוח או הפקודות - פשוט מדלגים עליה
+            if clean_line.lower().startswith(('לוח:', 'פקודות:', 'board:', 'commands:')):
+                continue
+
+            tokens = clean_line.split()
             
-            has_started_reading = True
+            # אם המילה הראשונה היא פקודה מוכרת, סימן שסיימנו לקרוא את הלוח
+            if tokens[0].lower() in ['click', 'wait', 'print', 'לחץ', 'המתן', 'הדפס', 'לוח']:
+                self.remaining_lines.append(clean_line)
+                break
+                
+            # אחרת, זו שורת לוח רגילה
             board.add_row(tokens)
 
         return board
