@@ -1,42 +1,41 @@
-# "ניהול מצב הדינאמי של המשחק"
-
 class ChessGame:
     def __init__(self, board):
         self.board = board
-        self.selected_cell = None  # ישמור (row, col) אם נבחר כלי, אחרת None
-        self.game_clock_ms = 0     # שעון המשחק במילישניות
+        self.selected_cell = None  # ישמור (row, col) אם נבחר כלי
+        self.game_clock_ms = 0     # שעון המשחק
 
     def handle_click(self, x: int, y: int) -> None:
         """מנהלת את לוגיקת הלחיצות על פי חוקי המשחק."""
-        # 1. המרת קואורדינטות ובדיקת גבולות (באמצעות הלוח)
         coords = self.board.convert_coordinates(x, y)
         if coords is None:
-            return  # לחיצה מחוץ ללוח - מתעלמים לחלוטין
+            return  # מחוץ ללוח - מתעלמים
 
         row, col = coords
 
-        # 2. לוגיקת בחירה והזזה
         # מצב א': אין כלי נבחר כרגע
         if self.selected_cell is None:
             if self.board.is_empty_cell(row, col):
-                return  # לחיצה על תא ריק ללא בחירה - מתעלמים
+                return  # תא ריק ללא בחירה - מתעלמים
             else:
-                self.selected_cell = (row, col)  # לחיצה על כלי בוחרת אותו
+                self.selected_cell = (row, col)  # בחירת כלי
                 
-        # מצב ב': כבר יש כלי נבחר מקודם
+        # מצב ב': יש כבר כלי נבחר
         else:
-            # אם לחצנו על כלי ידידותי אחר -> מחליפים את הבחירה
             if self.board.is_friendly_piece(row, col, self.selected_cell):
-                self.selected_cell = (row, col)
+                self.selected_cell = (row, col)  # החלפת בחירה בכלי ידידותי
             else:
-                # לחצנו על תא אחר (ריק או אויב) -> שולחים בקשת העברה
+                # לחיצה על תא אחר -> ביצוע המהלך
                 src_row, src_col = self.selected_cell
                 self._execute_move(src_row, src_col, row, col)
-                self.selected_cell = None  # מאפסים את הבחירה לאחר המהלך
+                self.selected_cell = None  # איפוס הבחירה
 
-  
+    def _execute_move(self, from_row: int, from_col: int, to_row: int, to_col: int) -> None:
+        """מבצעת העברת כלי ממשבצת אחת למשבצת שנייה ומעדכנת את הלוח."""
+        piece = self.board.get_piece_at(from_row, from_col)
+        self.board.set_piece_at(from_row, from_col, '.')
+        self.board.set_piece_at(to_row, to_col, piece)
+
     def handle_wait(self, ms: int) -> None:
-        """מקדם את שעון המשחק במספר המילישניות הנתון."""
         self.game_clock_ms += ms
 
     def handle_print(self) -> None:

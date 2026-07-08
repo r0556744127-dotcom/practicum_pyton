@@ -1,34 +1,36 @@
 import sys
-class ChessBoard:
-    """
-    אחריות: ניהול מבנה הנתונים של הלוח ואכיפת חוקי המבנה שלו (ורידציה).
-    המחלקה הזו לא יודעת מאיפה מגיע הקלט (מקלדת, קובץ או רשת) - היא רק מנהלת את הלוח.
-    """
-    def __init__(self):
-        self._matrix = []
-        self._expected_width = None
 
-    def add_row(self, tokens: list[str]) -> None:
-        """מוסיפה שורה ללוח ומבצעת בדיקות תקינות מיידיות."""
-        # 1. בדיקת תקינות תתי-הטוקנים (הכלים)
-        for token in tokens:
-            if not Piece.is_valid(token):
-                print("ERROR UNKNOWN_TOKEN")
-                sys.exit(0)
+class ChessBoardParser:
+    """אחראית על קריאת קלט גולמי ועיבודו לכדי אובייקט של לוח."""
+    
+    def __init__(self, input_stream=sys.stdin):
+        self._stream = input_stream
 
-        # 2. בדיקת אחידות רוחב השורות
-        current_width = len(tokens)
-        if self._expected_width is None:
-            self._expected_width = current_width
-        elif current_width != self._expected_width:
-            print("ERROR ROW_WIDTH_MISMATCH")
-            sys.exit(0)
+    def parse(self):
+        from ChessBoard import ChessBoard  
+        
+        board = ChessBoard()
+        
+        # שמירת השורות שנקראו כדי שנוכל להחזיר אותן לשימוש ב-main במידת הצורך
+        self.remaining_lines = []
 
-        self._matrix.append(tokens)
+        for line in self._stream:
+            clean_line = line.strip()
+            if not clean_line:
+                continue
+                
+            # אם נתקלנו בכותרת של הלוח או הפקודות - פשוט מדלגים עליה
+            if clean_line.lower().startswith(('לוח:', 'פקודות:', 'board:', 'commands:')):
+                continue
 
-    def is_empty(self) -> bool:
-        return len(self._matrix) == 0
+            tokens = clean_line.split()
+            
+            # אם המילה הראשונה היא פקודה מוכרת, סימן שסיימנו לקרוא את הלוח
+            if tokens[0].lower() in ['click', 'wait', 'print', 'לחץ', 'המתן', 'הדפס', 'לוח']:
+                self.remaining_lines.append(clean_line)
+                break
+                
+            # אחרת, זו שורת לוח רגילה
+            board.add_row(tokens)
 
-    def get_formatted_board(self) -> str:
-        """מחזירה ייצוג טקסטואלי של הלוח (הפרדת לוגיקה מהדפסה)."""
-        return "\n".join(" ".join(row) for row in self._matrix)
+        return board
