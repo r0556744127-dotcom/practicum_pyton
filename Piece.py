@@ -30,21 +30,26 @@ class Piece:
         dr = abs(row_diff)
         dc = abs(col_diff)
 
-        # לוגיקת חייל (Pawn)
+        # לוגיקת חייל (Pawn) מעודכנת
         if piece_type == 'P':
-            # לפי טסט 1: wP נע משורה 1 לשורה 0 (1- = row_diff)
-            # לפי טסט 2: bP נע משורה 1 לשורה 2 (1 = row_diff)
+            # כיוון תנועה ושורת התחלה לפי צבע הכלי
             valid_direction = -1 if moving_color == 'w' else 1
+            start_row_baseline = 6 if moving_color == 'w' else 1
             
-            # 1. צעד אחד ישר קדימה
+            # 1. צעד אחד ישר קדימה (הנתיב חייב להיות פנוי)
             if col_diff == 0 and row_diff == valid_direction:
                 return target_piece == '.'
                 
-            # 2. אכילה באלכסון (טסט 5: מ-1,1 ל-0,0 כאשר ב-0,0 יש bR)
+            # 2. צעד כפול משורת ההתחלה (הנתיב והיעד חייבים להיות פנויים)
+            if col_diff == 0 and start_row == start_row_baseline and row_diff == 2 * valid_direction:
+                intermediate_row = start_row + valid_direction
+                return (board.get_piece_at(intermediate_row, start_col) == '.' and 
+                        target_piece == '.')
+
+            # 3. אכילה באלכסון (צעד אחד קדימה, אחד הצידה - רק אם יש כלי יריב)
             if dc == 1 and row_diff == valid_direction:
                 return target_piece != '.' and target_piece[0] != moving_color
 
-            # כל תנועה אחרת של חייל (כולל צעד כפול, שכרגע מסומן בטסטים כ-invalid)
             return False
 
         # מלך
