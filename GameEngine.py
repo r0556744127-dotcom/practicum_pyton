@@ -1,4 +1,3 @@
-
 import sys
 # ייבוא הרכיבים הנחוצים מתוך הקבצים המקבילים בשורש הפרויקט
 from RuleEngine import RuleEngine
@@ -28,12 +27,19 @@ class GameEngine:
             if self.rule_engine.is_friendly((row, col), self.selected_cell):
                 self.selected_cell = (row, col) # החלפת בחירה
             else:
-                # ביצוע תנועה חופשית (באיטרציה זו אין עדיין חוקי שחמט)
                 src_row, src_col = self.selected_cell
-                piece = self.board.get_piece_at(src_row, src_col)
-                self.board.set_piece_at(src_row, src_col, '.')
-                self.board.set_piece_at(row, col, piece)
-                self.selected_cell = None
+                
+                # בדיקה חדשה: האם הדרך אל היעד פנויה מחוסמים?
+                if self.rule_engine.is_path_clear(self.selected_cell, (row, col)):
+                    piece = self.board.get_piece_at(src_row, src_col)
+                    
+                    # ביצוע התנועה + דריסה/הכאה אוטומטית אם יש שם כלי אויב
+                    self.board.set_piece_at(src_row, src_col, '.')
+                    self.board.set_piece_at(row, col, piece)
+                    self.selected_cell = None
+                else:
+                    # אם הדרך חסומה, נבטל את הבחירה כדי לא להיתקע
+                    self.selected_cell = None
 
     def handle_wait(self, ms: int) -> None:
         self.game_clock_ms += ms
