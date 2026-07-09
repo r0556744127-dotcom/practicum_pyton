@@ -1,6 +1,8 @@
 import pytest
-from unittest.mock import MagicMock
+from MappBoard import MappBoard
 from GameEngine import GameEngine
+
+from unittest.mock import MagicMock
 from GameSnapshot import GameSnapshot
 
 @pytest.fixture
@@ -125,3 +127,65 @@ def test_create_snapshot(engine):
     actual_matrix = getattr(snapshot, 'board_matrix', 
                     getattr(snapshot, 'matrix', None))
     assert actual_matrix == fake_matrix
+# בחירת כלי
+def test_select_piece():
+
+    board=MappBoard()
+    board.add_row(["wK","."])
+
+    game=GameEngine(board)
+
+    game.handle_click(50,50)
+
+    assert game.selected_cell==(0,0)  
+# לחיצה על ריק לא בוחרת    
+def test_empty_click():
+
+    board=MappBoard()
+    board.add_row([".","wK"])
+
+    game=GameEngine(board)
+
+    game.handle_click(50,50)
+
+    assert game.selected_cell is None
+# הזזת מלך    
+def test_move_piece():
+
+    board=MappBoard()
+    board.add_row(["wK","."])
+    board.add_row([".","."])
+
+    game=GameEngine(board)
+
+    game.handle_click(50,50)
+    game.handle_click(150,150)
+
+    assert board.get_piece_at(1,1)=="wK"
+    assert board.get_piece_at(0,0)=="."      
+# תנועה לא חוקית    
+def test_invalid_move_not_done():
+
+    board=MappBoard()
+    board.add_row(["wK",".","."])
+    board.add_row([".",".","."])
+    board.add_row([".",".","."])
+
+    game=GameEngine(board)
+
+    game.handle_click(50,50)
+    game.handle_click(250,250)
+
+    assert board.get_piece_at(0,0)=="wK"
+# החלפת בחירה    
+def test_switch_selection():
+
+    board=MappBoard()
+    board.add_row(["wR","wK"])
+
+    game=GameEngine(board)
+
+    game.handle_click(50,50)
+    game.handle_click(150,50)
+
+    assert game.selected_cell==(0,1)        

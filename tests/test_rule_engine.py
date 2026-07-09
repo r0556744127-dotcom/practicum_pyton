@@ -1,6 +1,7 @@
 import sys
 import os
-
+from MappBoard import MappBoard
+from RuleEngine import RuleEngine
 # מוצא את נתיב התיקייה שבה נמצא קובץ הטסט, ועולה רמה אחת למעלה (אל practicum_pyton)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
@@ -136,8 +137,48 @@ def test_rule_engine_knight_can_jump():
     
     # עבור פרש, הפונקציה צריכה להחזיר True ללא קשר לחוסמים בדרך
     assert engine.is_path_clear((0, 0), (2, 1)) is True
+def test_click_outside_board():
 
+    board = MappBoard()
+    board.add_row(["wK"])
 
+    engine = RuleEngine(board)
+
+    assert engine.convert_pixel_to_cell(
+        200,
+        200
+    ) is None
+def test_friendly_pieces():
+
+    board = MappBoard()
+    board.add_row(["wK","wR"])
+
+    engine = RuleEngine(board)
+
+    assert engine.is_friendly(
+        (0,0),
+        (0,1)
+    ) 
+def test_enemy_pieces():
+
+    board = MappBoard()
+    board.add_row(["wK","bK"])
+
+    engine = RuleEngine(board)
+
+    assert not engine.is_friendly(
+        (0,0),
+        (0,1)
+    )       
+def test_pixel_to_cell():
+    board = MappBoard()
+    board.add_row(["wK","."])
+    board.add_row([".","."])
+
+    engine = RuleEngine(board)
+
+    assert engine.convert_pixel_to_cell(50,50) == (0,0)
+    assert engine.convert_pixel_to_cell(150,50) == (0,1)
 def test_game_engine_capture_enemy():
     """בדיקה שלחיצה על כלי אויב במסלול פנוי מבצעת הכאה בהצלחה"""
     # ייבוא מקומי של הלוח והמנוע האמיתיים לצורך בדיקת האינטגרציה הזו
