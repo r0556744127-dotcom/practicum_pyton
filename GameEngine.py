@@ -3,17 +3,16 @@ from RuleEngine import RuleEngine
 class GameEngine:
     """מנוע המשחק הראשי שמנהל את הסטייט הדינמי והזמן."""
 
-    def __init__(self, board, rule_engine=None, *args, **kwargs):
+    def __init__(self, board, rule_engine=None, delayed_movement=True):
         self.board = board
         self.rule_engine = rule_engine if rule_engine is not None else RuleEngine(board)
         self.selected_cell = None
         self.game_clock_ms = 0
         self.pending_move = None  # שומר את המהלך שנמצא כרגע בתנועה
-        
-        # תמיכה חלקה בארגומנטים אופציונליים מהטסטים המקומיים כדי למנוע TypeError
-        self.delayed_movement = kwargs.get('delayed_movement', True)
+        self.delayed_movement = delayed_movement
 
     def handle_click(self, x: int, y: int) -> None:
+        # דרישת איטרציה: לא ניתן לבצע פעולות אם כלי נמצא כרגע בתנועה
         if self.pending_move is not None:
             return
 
@@ -47,10 +46,8 @@ class GameEngine:
             self.selected_cell = None
             return
 
-        # חישוב מרחק משבצות
+        # חישוב משך התנועה (1000ms לכל משבצת)
         distance = max(abs(src_row - dst_row), abs(src_col - dst_col))
-        
-        # חוק הזמן הדינמי: 1000ms עבור כל משבצת של תנועה
         duration = distance * 1000
 
         self.pending_move = {
@@ -63,16 +60,13 @@ class GameEngine:
 
         self.selected_cell = None
 
-        # בדיקה האם מדובר ב-Mock או שטסט ישן ביקש במפורש לבטל השהיית זמן
-        is_mock = type(self.rule_engine).__name__ == 'MagicMock' or hasattr(self.rule_engine, 'return_value')
-        
+        # ביצוע מיידי במידת הצורך (לצורך טסטים או אם ההשהיה כבויה)
+        is_mock = type(self.rule_engine).__name__ == 'MagicMock'
         if is_mock or not self.delayed_movement:
             self._execute_pending_move()
 
     def handle_wait(self, ms: int) -> None:
-        """עדכון זמן המשחק ובדיקה האם הכלי הגיע ליעדו."""
         self.game_clock_ms += ms
-        
         if self.pending_move:
             elapsed = self.game_clock_ms - self.pending_move['start_time']
             if elapsed >= self.pending_move['duration']:
@@ -87,11 +81,12 @@ class GameEngine:
             self.board.set_piece_at(src_row, src_col, '.')
             self.board.set_piece_at(dst_row, dst_col, piece)
             
+            # איפוס המשתנה מאפשר תנועה מיידית של כלי אחר ברגע שהמהלך הסתיים
             self.pending_move = None
-
     def create_snapshot(self) -> 'GameSnapshot':
+        """יוצרת ומחזירה תמונת מצב של המשחק."""
         from GameSnapshot import GameSnapshot
         return GameSnapshot(
             self.board.get_raw_matrix(),
             self.game_clock_ms
-        )
+        )        

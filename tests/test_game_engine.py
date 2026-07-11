@@ -121,3 +121,48 @@ def test_move_over_time_after_sufficient_wait_reaches_destination():
     game.handle_click(150, 150)
     game.handle_wait(2000) # תואם לנוסחת ה-distance * 1000
     assert board.get_piece_at(1, 1) == "wK"
+def test_prevent_movement_while_in_progress():
+    """בדיקה שלא ניתן להזיז כלי אחר או את אותו כלי בזמן שיש תנועה בתהליך"""
+    board = MappBoard()
+    board.add_row(["wK", ".", "."])
+    board.add_row([".", ".", "."])
+    
+    # שימוש ב-delayed_movement=True כדי שהתנועה תיקח זמן
+    game = GameEngine(board, delayed_movement=True)
+    
+    # בחירה והתחלת תנועה
+    game.handle_click(50, 50)   # בוחר wK ב-(0,0)
+    game.handle_click(250, 50)  # מתחיל תנועה ל-(0,2)
+    
+    # עכשיו המנוע ב-pending_move. ננסה ללחוץ שוב
+    game.handle_click(50, 50)   # לחיצה נוספת
+    
+    # הבדיקה: הלוח לא אמור להשתנות כי התנועה הראשונה עדיין בעיצומה
+    assert board.get_piece_at(0, 0) == "wK" 
+    assert board.get_piece_at(0, 2) == "."
+
+
+def test_immediate_movement_after_completion():
+    """בדיקה שאחרי סיום תנועה, ניתן להזיז כלי מיד ללא צורך בהמתנה נוספת"""
+    board = MappBoard()
+    board.add_row(["wK", ".", "."])
+    board.add_row([".", ".", "."])
+    
+    game = GameEngine(board, delayed_movement=True)
+    
+    # מהלך ראשון
+    game.handle_click(50, 50)   # (0,0)
+    game.handle_click(150, 50)  # (0,1)
+    
+    # סיום המהלך הראשון
+    game.handle_wait(1000) 
+    assert board.get_piece_at(0, 1) == "wK"
+    
+    # מהלך שני מיידי (בדיקה שאין 'קירור')
+    game.handle_click(150, 50)  # בחירה מ-(0,1)
+    game.handle_click(250, 50)  # תנועה ל-(0,2)
+    
+    # סיום המהלך השני
+    game.handle_wait(1000)
+    assert board.get_piece_at(0, 2) == "wK"
+    assert board.get_piece_at(0, 1) == "."    
