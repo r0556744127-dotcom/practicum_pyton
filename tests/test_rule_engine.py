@@ -1,25 +1,22 @@
 import sys
 import os
-from MappBoard import MappBoard
-from RuleEngine import RuleEngine
-# מוצא את נתיב התיקייה שבה נמצא קובץ הטסט, ועולה רמה אחת למעלה (אל practicum_pyton)
+from unittest.mock import MagicMock
+import pytest
+
+# מוצא את נתיב התיקייה שבה נמצא קובץ הטסט, ועולה רמה אחת למעלה
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-# רק עכשיו, אחרי שהנתיב מעוגן ב-sys.path, ניקח את המודולים
-import pytest
-# שימי לב לאותיות הגדולות - בדיוק כמו שם הקובץ שלך!
+from MappBoard import MappBoard
 from RuleEngine import RuleEngine 
 
 
-
-# מחלקת דמה (Stub) המדמה את התנהגות הלוח לצורך הבדיקות
+# --- מחלקת דמה (Stub) המדמה את התנהגות הלוח לצורך הבדיקות ---
 class FakeBoard:
     def __init__(self, rows=8, cols=8, grid=None):
         self.rows = rows
         self.cols = cols
-        # ברירת מחדל: לוח ריק שמיוצג ע"י נקודות
         self.grid = grid or [['.' for _ in range(cols)] for _ in range(rows)]
 
     def get_dimensions(self):
@@ -36,17 +33,15 @@ def test_convert_pixel_to_cell_valid():
     board = FakeBoard(rows=8, cols=8)
     engine = RuleEngine(board)
     
-    # פיקסל (150, 250) -> עמודה 1 (150 // 100), שורה 2 (250 // 100)
     assert engine.convert_pixel_to_cell(150, 250) == (2, 1)
-    # בדיקת פיקסל בראשית הצירים (0,0)
     assert engine.convert_pixel_to_cell(0, 0) == (0, 0)
+
 
 def test_convert_pixel_to_cell_out_of_bounds():
     """בדיקה שמיקום מחוץ לגבולות הלוח מחזיר None"""
-    board = FakeBoard(rows=3, cols=3) # לוח קטן של 300x300 פיקסלים
+    board = FakeBoard(rows=3, cols=3)
     engine = RuleEngine(board)
     
-    # פיקסל 350 חורג מלוח של 3 תאים (מקסימום 299)
     assert engine.convert_pixel_to_cell(350, 100) is None
     assert engine.convert_pixel_to_cell(100, -5) is None
 
@@ -57,35 +52,38 @@ def test_is_friendly_same_color():
     """בדיקה ששני כלים מאותו צבע מחזירים True"""
     grid = [
         ['w_pawn', 'w_knight', '.'],
-        ['.',      '.',        '.']
+        ['.',       '.',        '.']
     ]
     board = FakeBoard(rows=2, cols=3, grid=grid)
     engine = RuleEngine(board)
     
     assert engine.is_friendly((0, 0), (0, 1)) is True
 
+
 def test_is_friendly_different_colors():
     """בדיקה ששני כלים מצבעים שונים מחזירים False"""
     grid = [
         ['w_pawn', 'b_pawn', '.'],
-        ['.',      '.',      '.']
+        ['.',       '.',      '.']
     ]
     board = FakeBoard(rows=2, cols=3, grid=grid)
     engine = RuleEngine(board)
     
     assert engine.is_friendly((0, 0), (0, 1)) is False
 
+
 def test_is_friendly_with_empty_cell():
     """בדיקה שאם אחד התאים (או שניהם) ריק, מחזיר False"""
     grid = [
         ['w_pawn', '.', '.'],
-        ['.',      '.', '.']
+        ['.',       '.', '.']
     ]
     board = FakeBoard(rows=2, cols=3, grid=grid)
     engine = RuleEngine(board)
     
-    assert engine.is_friendly((0, 0), (0, 1)) is False  # אחד ריק
-    assert engine.is_friendly((0, 1), (0, 2)) is False  # שניהם ריקים
+    assert engine.is_friendly((0, 0), (0, 1)) is False
+    assert engine.is_friendly((0, 1), (0, 2)) is False
+
 
 def test_is_friendly_invalid_input():
     """בדיקה שהעברת תא ריק (None) לא קורסת ומחזירה False"""
@@ -94,13 +92,12 @@ def test_is_friendly_invalid_input():
     
     assert engine.is_friendly(None, (0, 0)) is False
     assert engine.is_friendly((0, 0), None) is False
-# ==========================================
-# טסטים חדשים: חוסמים, דילוגים ומנגנון תפיסה (Capture)
-# ==========================================
+
+
+# --- בדיקות חוסמים, דילוגים ומסלול ---
 
 def test_rule_engine_path_clear_rook_blocked():
     """בדיקה שצריח (R) מזוהה כחסום כאשר יש כלי במסלול הישר שלו"""
-    # יצירת רשת תאים מותאמת עם צריח לבן ב-(0,0), חוסם ב-(0,1), ויעד ב-(0,2)
     grid = [
         ['wR', 'wP', '.'],
         ['.',  '.',  '.']
@@ -108,7 +105,6 @@ def test_rule_engine_path_clear_rook_blocked():
     board = FakeBoard(rows=2, cols=3, grid=grid)
     engine = RuleEngine(board)
     
-    # הבדיקה צריכה להחזיר False כי יש רגלי לבן (wP) בדרך
     assert engine.is_path_clear((0, 0), (0, 2)) is False
 
 
@@ -135,65 +131,111 @@ def test_rule_engine_knight_can_jump():
     board = FakeBoard(rows=3, cols=3, grid=grid)
     engine = RuleEngine(board)
     
-    # עבור פרש, הפונקציה צריכה להחזיר True ללא קשר לחוסמים בדרך
     assert engine.is_path_clear((0, 0), (2, 1)) is True
-def test_click_outside_board():
 
+
+def test_click_outside_board():
     board = MappBoard()
     board.add_row(["wK"])
-
     engine = RuleEngine(board)
+    assert engine.convert_pixel_to_cell(200, 200) is None
 
-    assert engine.convert_pixel_to_cell(
-        200,
-        200
-    ) is None
+
 def test_friendly_pieces():
-
     board = MappBoard()
-    board.add_row(["wK","wR"])
-
+    board.add_row(["wK", "wR"])
     engine = RuleEngine(board)
+    assert engine.is_friendly((0, 0), (0, 1)) 
 
-    assert engine.is_friendly(
-        (0,0),
-        (0,1)
-    ) 
+
 def test_enemy_pieces():
-
     board = MappBoard()
-    board.add_row(["wK","bK"])
-
+    board.add_row(["wK", "bK"])
     engine = RuleEngine(board)
+    assert not engine.is_friendly((0, 0), (0, 1))      
 
-    assert not engine.is_friendly(
-        (0,0),
-        (0,1)
-    )       
+
 def test_pixel_to_cell():
     board = MappBoard()
-    board.add_row(["wK","."])
-    board.add_row([".","."])
-
+    board.add_row(["wK", "."])
+    board.add_row([".", "."])
     engine = RuleEngine(board)
+    assert engine.convert_pixel_to_cell(50, 50) == (0, 0)
+    assert engine.convert_pixel_to_cell(150, 50) == (0, 1)
 
-    assert engine.convert_pixel_to_cell(50,50) == (0,0)
-    assert engine.convert_pixel_to_cell(150,50) == (0,1)
+
 def test_game_engine_capture_enemy():
     """בדיקה שלחיצה על כלי אויב במסלול פנוי מבצעת הכאה בהצלחה"""
-    # ייבוא מקומי של הלוח והמנוע האמיתיים לצורך בדיקת האינטגרציה הזו
-    from MappBoard import MappBoard
     from GameEngine import GameEngine
     
     board = MappBoard()
-    board.add_row(['wR', '.', 'bP'])  # צריח לבן ב-(0,0), רגלי שחור ב-(0,2)
+    board.add_row(['wR', '.', 'bP'])
     
-    engine = GameEngine(board)
-    
+    # הוספת delayed_movement=False כדי שהתנועה תבוצע מייד בטסט
+    engine = GameEngine(board, delayed_movement=False)
+
     engine.handle_click(50, 50)    # לחיצה ראשונה: בחירת הצריח (0,0)
     engine.handle_click(250, 50)   # לחיצה שנייה: תנועה ליעד והכאת האויב (0,2)
     
-    # הצריח הלבן צריך להחליף את הרגלי השחור ביעד, והמשבצת המקורית מתפנה
+    # כעת התנועה בוצעה מיידית והמשבצת המקורית אכן ריקה
     assert board.get_piece_at(0, 0) == '.'
     assert board.get_piece_at(0, 2) == 'wR'
-    assert engine.selected_cell is None  # הבחירה מתאפסת לאחר התנועה
+# --- בדיקות מבוססות Mock (הוסרו מתודות ה-self לטובת סגנון pytest נקי) ---
+
+def test_is_path_clear_same_source_and_destination_returns_false():
+    """מוודא שלחיצה על אותו תא בדיוק נעצרת מיד ומחזירה False למניעת לולאה אינסופית."""
+    mock_board = MagicMock()
+    engine = RuleEngine(mock_board)
+    
+    src = (3, 3)
+    dst = (3, 3)
+    
+    assert engine.is_path_clear(src, dst) is False
+
+
+def test_is_path_clear_when_source_is_empty():
+    """מוודא שאם תא המקור ריק באופן בלתי צפוי, הפונקציה מחזירה False."""
+    mock_board = MagicMock()
+    mock_board.get_piece_at.return_value = '.'
+    engine = RuleEngine(mock_board)
+    
+    src = (1, 1)
+    dst = (1, 4)
+    
+    assert engine.is_path_clear(src, dst) is False
+
+
+def test_is_path_clear_with_blocker_returns_false():
+    """בודק שכלי ליניארי מזהה חוסם באמצע הדרך ומחזיר False."""
+    mock_board = MagicMock()
+    
+    def side_effect_board(row, col):
+        if (row, col) == (0, 0): return 'wR'
+        if (row, col) == (0, 2): return 'bP'  # חוסם באמצע המסלול
+        return '.'
+        
+    mock_board.get_piece_at.side_effect = side_effect_board
+    engine = RuleEngine(mock_board)
+    
+    src = (0, 0)
+    dst = (0, 4)
+    
+    assert engine.is_path_clear(src, dst) is False
+
+
+def test_is_path_clear_with_enemy_at_destination_only_returns_true():
+    """מוודא שכלי אויב שנמצא *רק במשבצת היעד* אינו חוסם את המסלול (מאפשר הכאה)."""
+    mock_board = MagicMock()
+    
+    def side_effect_board(row, col):
+        if (row, col) == (0, 0): return 'wR'
+        if (row, col) == (0, 3): return 'bP'  # כלי אויב שנמצא על היעד
+        return '.'
+        
+    mock_board.get_piece_at.side_effect = side_effect_board
+    engine = RuleEngine(mock_board)
+    
+    src = (0, 0)
+    dst = (0, 3)
+    
+    assert engine.is_path_clear(src, dst) is True

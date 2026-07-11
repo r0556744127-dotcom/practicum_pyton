@@ -81,3 +81,35 @@ class PieceRules:
             )
 
         return False
+    @staticmethod
+    def is_valid_move(piece: str, src_row: int, src_col: int, dst_row: int, dst_col: int, target_piece: str = '.') -> bool:
+        if piece == '.':
+            return False
+
+        piece_type = piece[1] if len(piece) > 1 else piece
+        color = piece[0] if len(piece) > 1 else 'w'
+
+        # --- לוגיקת החיילים (Pawns) ---
+        if piece_type == 'P':
+            # קביעת כיוון התנועה: לבן נע למעלה (השורה קטנה), שחור נע למטה (השורה גדלה)
+            direction = -1 if color == 'w' else 1
+            
+            row_diff = dst_row - src_row
+            col_diff = abs(dst_col - src_col)
+
+            # 1. תנועה קדימה של תא אחד (חייבת להיות למשבצת ריקה)
+            if row_diff == direction and col_diff == 0:
+                return target_piece == '.'
+
+            # 2. תפיסה באלכסון של תא אחד (חייב להיות שם כלי)
+            if row_diff == direction and col_diff == 1:
+                return target_piece != '.'
+
+            # כל תנועה אחרת (כולל 2 תאים או תפיסה ישר קדימה) אינה חוקית באיטרציה זו
+            return False
+
+        # --- חוקים קיימים לכלים אחרים (לדוגמה מלך) ---
+        if piece_type == 'K':
+            return abs(dst_row - src_row) <= 1 and abs(dst_col - src_col) <= 1
+
+        return True

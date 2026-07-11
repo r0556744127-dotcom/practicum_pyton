@@ -106,4 +106,49 @@ def test_invalid_token_move():
         0,0,
         1,1
     ) == False      
-                  
+def test_white_pawn_moves_up_one_square_empty():
+    """חייל לבן יכול לזוז תא אחד קדימה למשבצת ריקה"""
+    # שורה 4 לשורה 3 זה תנועה למעלה
+    assert PieceRules.is_valid_move('wP', src_row=4, src_col=3, dst_row=3, dst_col=3, target_piece='.') is True
+
+def test_white_pawn_cannot_move_up_if_blocked():
+    """חייל לבן אינו יכול לזוז קדימה אם יש שם כלי (אינו יכול לתפוס קדימה)"""
+    assert PieceRules.is_valid_move('wP', src_row=4, src_col=3, dst_row=3, dst_col=3, target_piece='bP') is False
+
+def test_white_pawn_captures_diagonally():
+    """חייל לבן יכול לתפוס כלי אויב באלכסון קדימה"""
+    assert PieceRules.is_valid_move('wP', src_row=4, src_col=3, dst_row=3, dst_col=4, target_piece='bP') is True
+
+def test_white_pawn_cannot_diagonal_move_if_empty():
+    """חייל לבן אינו יכול לזוז באלכסון אם המשבצת ריקה"""
+    assert PieceRules.is_valid_move('wP', src_row=4, src_col=3, dst_row=3, dst_col=4, target_piece='.') is False
+
+
+# --- בדיקות עבור חייל שחור (bP) - נע למטה (Row גדל ב-1) ---
+
+def test_black_pawn_moves_down_one_square_empty():
+    """חייל שחור יכול לזוז תא אחד קדימה למטה למשבצת ריקה"""
+    # שורה 1 לשורה 2 זה תנועה למטה
+    assert PieceRules.is_valid_move('bP', src_row=1, src_col=3, dst_row=2, dst_col=3, target_piece='.') is True
+
+def test_black_pawn_cannot_move_down_if_blocked():
+    """חייל שחור אינו יכול לזוז קדימה אם יש שם כלי"""
+    assert PieceRules.is_valid_move('bP', src_row=1, src_col=3, dst_row=2, dst_col=3, target_piece='wP') is False
+
+def test_black_pawn_captures_diagonally_down():
+    """חייל שחור יכול לתפוס כלי אויב באלכסון קדימה למטה"""
+    assert PieceRules.is_valid_move('bP', src_row=1, src_col=3, dst_row=2, dst_col=2, target_piece='wP') is True
+
+
+# --- בדיקות הגבלות כלליות לחיילים ---
+
+def test_pawns_cannot_move_two_squares():
+    """חיילים אינם יכולים לזוז שני תאים קדימה באיטרציה זו"""
+    # לבן מנסה לקפוץ 2 תאים
+    assert PieceRules.is_valid_move('wP', src_row=6, src_col=3, dst_row=4, dst_col=3, target_piece='.') is False
+    # שחור מנסה לקפוץ 2 תאים
+    assert PieceRules.is_valid_move('bP', src_row=1, src_col=3, dst_row=3, dst_col=3, target_piece='.') is False
+
+def test_white_pawn_cannot_move_wrong_direction():
+    """חייל לבן אינו יכול לזוז אחורה (למטה)"""
+    assert PieceRules.is_valid_move('wP', src_row=4, src_col=3, dst_row=5, dst_col=3, target_piece='.') is False                  
