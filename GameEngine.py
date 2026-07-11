@@ -12,47 +12,47 @@ class GameEngine:
         self.delayed_movement = delayed_movement
 
     def handle_click(self, x: int, y: int) -> None:
-        # דרישת איטרציה: לא ניתן לבצע פעולות אם כלי נמצא כרגע בתנועה
+        # בדיקה אם כלי בתנועה
         if self.pending_move is not None:
             return
 
         coords = self.rule_engine.convert_pixel_to_cell(x, y)
         if coords is None:
-            self.selected_cell = None
             return
 
         row, col = coords
-        current_piece = self.board.get_piece_at(row, col)
+        target_piece = self.board.get_piece_at(row, col)
 
+        # בחירת כלי
         if self.selected_cell is None:
-            if current_piece != '.':
+            if target_piece != '.':
                 self.selected_cell = (row, col)
             return
 
+        # אם בחרנו תא שכבר נבחר - נבטל בחירה
+        if self.selected_cell == (row, col):
+            self.selected_cell = None
+            return
+
+        # בדיקת חוקיות בסיסית (חברותי או לא)
         if self.rule_engine.is_friendly((row, col), self.selected_cell):
             self.selected_cell = (row, col)
             return
 
-        if not self.rule_engine.is_valid_move(self.selected_cell, (row, col)):
+        # בדיקת חוקיות התנועה (גיאומטריה + מסלול)
+        if not self.rule_engine.is_valid_move(self.selected_cell, (row, col)) or \
+           not self.rule_engine.is_path_clear(self.selected_cell, (row, col)):
+            # לא מאפסים את selected_cell כדי לאפשר למשתמש לנסות שוב
             return
 
-        if not self.rule_engine.is_path_clear(self.selected_cell, (row, col)):
-            return
-
+        # תקינות: ביצוע התנועה
         src_row, src_col = self.selected_cell
-        dst_row, dst_col = row, col
-
-        if (src_row, src_col) == (dst_row, dst_col):
-            self.selected_cell = None
-            return
-
-        # חישוב משך התנועה (1000ms לכל משבצת)
-        distance = max(abs(src_row - dst_row), abs(src_col - dst_col))
+        distance = max(abs(src_row - row), abs(src_col - col))
         duration = distance * 1000
 
         self.pending_move = {
             'src': (src_row, src_col),
-            'dst': (dst_row, dst_col),
+            'dst': (row, col),
             'start_time': self.game_clock_ms,
             'duration': duration,
             'piece': self.board.get_piece_at(src_row, src_col)
@@ -60,11 +60,10 @@ class GameEngine:
 
         self.selected_cell = None
 
-        # ביצוע מיידי במידת הצורך (לצורך טסטים או אם ההשהיה כבויה)
+        # ביצוע מיידי במידת הצורך (למשל בטסטים)
         is_mock = type(self.rule_engine).__name__ == 'MagicMock'
         if is_mock or not self.delayed_movement:
             self._execute_pending_move()
-
     def handle_wait(self, ms: int) -> None:
         self.game_clock_ms += ms
         if self.pending_move:
