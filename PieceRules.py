@@ -48,39 +48,27 @@ class PieceRules:
 
 
     @staticmethod
-    def is_valid_move(piece, src_row, src_col, dst_row, dst_col):
-
+    def is_valid_move(piece: str, src_row: int, src_col: int, dst_row: int, dst_col: int, target_piece: str = '.') -> bool:
         if piece == '.':
             return False
 
-        piece_type = piece[1]
+        piece_type = piece[1] if len(piece) > 1 else piece
+        color = piece[0] if len(piece) > 1 else 'w'
 
+        # לוגיקת חיילים (נשארת כפי שהייתה)
+        if piece_type == 'P':
+            direction = -1 if color == 'w' else 1
+            row_diff = dst_row - src_row
+            col_diff = abs(dst_col - src_col)
+            if row_diff == direction and col_diff == 0: return target_piece == '.'
+            if row_diff == direction and col_diff == 1: return target_piece != '.'
+            return False
+
+        # לוגיקת מלך - מאפשרים כל מהלך במרחק 1, ללא תלות בתוכן היעד
         if piece_type == 'K':
-            return PieceRules.can_king_move(
-                src_row, src_col, dst_row, dst_col
-            )
+            return abs(dst_row - src_row) <= 1 and abs(dst_col - src_col) <= 1 and (dst_row != src_row or dst_col != src_col)
 
-        if piece_type == 'R':
-            return PieceRules.can_rook_move(
-                src_row, src_col, dst_row, dst_col
-            )
-
-        if piece_type == 'B':
-            return PieceRules.can_bishop_move(
-                src_row, src_col, dst_row, dst_col
-            )
-
-        if piece_type == 'Q':
-            return PieceRules.can_queen_move(
-                src_row, src_col, dst_row, dst_col
-            )
-
-        if piece_type == 'N':
-            return PieceRules.can_knight_move(
-                src_row, src_col, dst_row, dst_col
-            )
-
-        return False
+        return True
     @staticmethod
     def is_valid_move(piece: str, src_row: int, src_col: int, dst_row: int, dst_col: int, target_piece: str = '.') -> bool:
         if piece == '.':

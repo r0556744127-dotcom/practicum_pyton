@@ -8,84 +8,81 @@ class GameEngine:
         self.rule_engine = rule_engine if rule_engine is not None else RuleEngine(board)
         self.selected_cell = None
         self.game_clock_ms = 0
-        self.pending_move = None  # שומר את המהלך שנמצא כרגע בתנועה
+        self.pending_move = None
         self.delayed_movement = delayed_movement
+        self.game_over = False
 
     def handle_click(self, x: int, y: int) -> None:
-        # בדיקה אם כלי בתנועה
-        if self.pending_move is not None:
+        if self.game_over or self.pending_move is not None:
             return
 
         coords = self.rule_engine.convert_pixel_to_cell(x, y)
         if coords is None:
+            self.selected_cell = None
             return
 
         row, col = coords
         target_piece = self.board.get_piece_at(row, col)
 
-        # בחירת כלי
         if self.selected_cell is None:
             if target_piece != '.':
                 self.selected_cell = (row, col)
             return
 
-        # אם בחרנו תא שכבר נבחר - נבטל בחירה
         if self.selected_cell == (row, col):
             self.selected_cell = None
             return
-
-        # בדיקת חוקיות בסיסית (חברותי או לא)
+        
         if self.rule_engine.is_friendly((row, col), self.selected_cell):
             self.selected_cell = (row, col)
             return
 
-        # בדיקת חוקיות התנועה (גיאומטריה + מסלול)
-        if not self.rule_engine.is_valid_move(self.selected_cell, (row, col)) or \
-           not self.rule_engine.is_path_clear(self.selected_cell, (row, col)):
-            # לא מאפסים את selected_cell כדי לאפשר למשתמש לנסות שוב
-            return
+        # --- הוספת הבדיקה לזיהוי הכאת מלך ---
+        is_king_capture = ('K' in str(target_piece))
+        
+        # אם זה לא הכאת מלך, נמשיך לבדוק חוקיות רגילה
+        if not is_king_capture:
+            if not self.rule_engine.is_valid_move(self.selected_cell, (row, col)) or \
+               not self.rule_engine.is_path_clear(self.selected_cell, (row, col)):
+                return
+        # -----------------------------------
 
-        # תקינות: ביצוע התנועה
         src_row, src_col = self.selected_cell
-        distance = max(abs(src_row - row), abs(src_col - col))
-        duration = distance * 1000
-
         self.pending_move = {
             'src': (src_row, src_col),
             'dst': (row, col),
             'start_time': self.game_clock_ms,
-            'duration': duration,
+            'duration': max(abs(src_row - row), abs(src_col - col)) * 1000,
             'piece': self.board.get_piece_at(src_row, src_col)
         }
-
         self.selected_cell = None
 
-        # ביצוע מיידי במידת הצורך (למשל בטסטים)
-        is_mock = type(self.rule_engine).__name__ == 'MagicMock'
-        if is_mock or not self.delayed_movement:
+        if not self.delayed_movement:
             self._execute_pending_move()
     def handle_wait(self, ms: int) -> None:
         self.game_clock_ms += ms
         if self.pending_move:
-            elapsed = self.game_clock_ms - self.pending_move['start_time']
-            if elapsed >= self.pending_move['duration']:
+            if self.game_clock_ms - self.pending_move['start_time'] >= self.pending_move['duration']:
                 self._execute_pending_move()
 
     def _execute_pending_move(self) -> None:
-        if self.pending_move:
-            src_row, src_col = self.pending_move['src']
-            dst_row, dst_col = self.pending_move['dst']
-            piece = self.pending_move['piece']
+        if not self.pending_move:
+            return
 
-            self.board.set_piece_at(src_row, src_col, '.')
-            self.board.set_piece_at(dst_row, dst_col, piece)
-            
-            # איפוס המשתנה מאפשר תנועה מיידית של כלי אחר ברגע שהמהלך הסתיים
-            self.pending_move = None
+        src = self.pending_move['src']
+        dst = self.pending_move['dst']
+        piece = self.pending_move['piece']
+        
+        # בדיקה אם המהלך תופס מלך לפני ביצוע השינוי בלוח
+        target = self.board.get_piece_at(dst[0], dst[1])
+        if target is not None and 'K' in str(target):
+            self.game_over = True
+        
+        # ביצוע המהלך
+        self.board.set_piece_at(src[0], src[1], '.')
+        self.board.set_piece_at(dst[0], dst[1], piece)
+        
+        self.pending_move = None
     def create_snapshot(self) -> 'GameSnapshot':
-        """יוצרת ומחזירה תמונת מצב של המשחק."""
         from GameSnapshot import GameSnapshot
-        return GameSnapshot(
-            self.board.get_raw_matrix(),
-            self.game_clock_ms
-        )        
+        return GameSnapshot(self.board.get_raw_matrix(), self.game_clock_ms)

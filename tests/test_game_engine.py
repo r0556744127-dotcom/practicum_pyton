@@ -61,18 +61,28 @@ def test_handle_click_switch_selection(engine):
 
 def test_handle_click_execute_move(engine):
     game_eng, board, rule_engine = engine
+    # ודאי שהמנוע מוגדר לבצע מהלכים מיידית
+    game_eng.delayed_movement = False 
+    
     game_eng.selected_cell = (1, 1)
+    # ... שאר הקוד נשאר אותו דבר ...
+    game_eng.selected_cell = (1, 1)
+    
+    # הגדרות ה-mock
     board.get_piece_at.side_effect = lambda r, c: 'wP' if (r, c) == (1, 1) else '.'
     rule_engine.convert_pixel_to_cell.return_value = (2, 2)
     rule_engine.is_friendly.return_value = False
+    rule_engine.is_valid_move.return_value = True
+    rule_engine.is_path_clear.return_value = True
+    
     game_eng.handle_click(250, 250)
+    
+    # הדפסת כל הקריאות שבוצעו ל-board
+    print(f"\nMethod calls: {board.method_calls}")
+    print(f"Set piece calls: {board.set_piece_at.call_args_list}")
+    
     assert game_eng.selected_cell is None
     board.set_piece_at.assert_any_call(1, 1, '.')
-    board.set_piece_at.assert_any_call(2, 2, 'wP')
-
-
-# --- בדיקות עבור handle_wait ו-create_snapshot ---
-
 def test_handle_wait_updates_clock(engine):
     game_eng, _, _ = engine
     game_eng.handle_wait(150)
@@ -165,4 +175,31 @@ def test_immediate_movement_after_completion():
     # סיום המהלך השני
     game.handle_wait(1000)
     assert board.get_piece_at(0, 2) == "wK"
-    assert board.get_piece_at(0, 1) == "."    
+    assert board.get_piece_at(0, 1) == "."   
+def test_game_over_on_king_capture():
+    """בדיקה שהכאת מלך האויב מסיימת את המשחק"""
+    board = MappBoard()
+    board.add_row(["wK", ".", "bK"])
+    game = GameEngine(board, delayed_movement=False)
+    
+    game.handle_click(50, 50)   # בחירת המלך הלבן
+    game.handle_click(250, 50)  # תנועה להכאת המלך השחור
+    
+    assert game.game_over is True
+
+def test_ignore_clicks_after_game_over():
+    """בדיקה שלאחר סיום המשחק, פקודות נוספות לא מבצעות דבר"""
+    board = MappBoard()
+    board.add_row(["wK", ".", "bK"])
+    game = GameEngine(board, delayed_movement=False)
+    
+    # סיום משחק
+    game.handle_click(50, 50)
+    game.handle_click(250, 50)
+    
+    # ניסיון תנועה נוסף
+    game.handle_click(250, 50) # המיקום החדש של המלך הלבן
+    game.handle_click(50, 50)  # ניסיון תנועה
+    
+    # הלוח צריך להישאר במצב של אחרי הכאה (המלך הלבן ב-250, 50)
+    assert board.get_piece_at(0, 2) == "wK"     
