@@ -8,22 +8,9 @@ class RuleEngine:
     def __init__(self, board: MappBoard):
         self.board = board
 
-    def is_valid_move(self, src, dst):
-        src_row, src_col = src
-        dst_row, dst_col = dst
-
-        piece = self.board.get_piece_at(src_row, src_col)
-
-        if piece == '.':
-            return False
-
-        return PieceRules.is_valid_move(
-            piece,
-            src_row,
-            src_col,
-            dst_row,
-            dst_col
-        )
+    def is_valid_move(self, piece, src_row, src_col, dst_row, dst_col, target_piece):
+        # העברה לפונקציה הסטטית של PieceRules
+        return PieceRules.is_valid_move(piece, src_row, src_col, dst_row, dst_col, target_piece)
 
     def convert_pixel_to_cell(self, x, y):
         rows, cols = self.board.get_dimensions()

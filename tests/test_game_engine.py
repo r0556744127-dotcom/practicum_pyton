@@ -1,205 +1,219 @@
-import pytest
-from MappBoard import MappBoard
-from GameEngine import GameEngine
-from unittest.mock import MagicMock
-from GameSnapshot import GameSnapshot
-
-@pytest.fixture
-def mock_dependencies():
-    """פיקסטורה המייצרת מוקים נקיים ללוח ולמנוע החוקים עבור כל טסט"""
-    board = MagicMock()
-    rule_engine = MagicMock()
-    return board, rule_engine
-
-@pytest.fixture
-def engine(mock_dependencies):
-    """פיקסטורה שמאתחלת את מנוע המשחק עם המוקים שהגדרנו"""
-    board, rule_engine = mock_dependencies
-    
-    game_eng = GameEngine(board)
-    game_eng.rule_engine = rule_engine
-    
-    return game_eng, board, rule_engine
+from board import Board
+from piece import Piece
+from game_engine import GameEngine
 
 
-# --- בדיקות עבור handle_click ---
-
-def test_handle_click_out_of_bounds(engine):
-    game_eng, board, rule_engine = engine
-    rule_engine.convert_pixel_to_cell.return_value = None
-    game_eng.handle_click(500, 500)
-    assert game_eng.selected_cell is None
-    board.get_piece_at.assert_not_called()
+def make_board(rows):
+    return Board(rows)
 
 
-def test_handle_click_select_piece(engine):
-    game_eng, board, rule_engine = engine
-    rule_engine.convert_pixel_to_cell.return_value = (2, 3)
-    board.get_piece_at.return_value = 'wP'
-    game_eng.handle_click(250, 350)
-    assert game_eng.selected_cell == (2, 3)
-    board.get_piece_at.assert_called_once_with(2, 3)
+class FakeRuleEngine:
+    """Test double injected via constructor DI - lets us force the
+    RuleEngine's verdict without touching real movement rules."""
+
+    def __init__(self, verdict):
+        self.verdict = verdict
+        self.calls = []
+
+    def is_legal(self, piece, from_row, from_col, to_row, to_col, board):
+        self.calls.append((from_row, from_col, to_row, to_col))
+        return self.verdict
 
 
-def test_handle_click_select_empty_cell(engine):
-    game_eng, board, rule_engine = engine
-    rule_engine.convert_pixel_to_cell.return_value = (0, 0)
-    board.get_piece_at.return_value = '.'
-    game_eng.handle_click(50, 50)
-    assert game_eng.selected_cell is None
+class FakeArbiter:
+    """Test double injected via constructor DI - lets us force pending
+    motion / airborne state deterministically."""
+
+    def __init__(self, pending_from=None, airborne_cells=None,
+                 airborne_finish_times=None, clock=0, advance_result=None):
+        self._pending_from = pending_from or set()
+        self._airborne_cells = airborne_cells or set()
+        self._airborne_finish_times = airborne_finish_times or {}
+        self.clock = clock
+        self._advance_result = advance_result or []
+        self.scheduled_moves = []
+        self.scheduled_jumps = []
+    def has_opposing_color_pending(self, color):
+        return False  # או כל ערך בוליאני אחר שמתאים ללוגיקת הטסט שלך
+    def has_pending_move_from(self, row, col):
+        return (row, col) in self._pending_from
+
+    def is_airborne(self, row, col):
+        return (row, col) in self._airborne_cells
+
+    def airborne_finish_time(self, row, col):
+        return self._airborne_finish_times.get((row, col))
+
+    def schedule_move(self, from_row, from_col, to_row, to_col,color):
+        self.scheduled_moves.append((from_row, from_col, to_row, to_col,color))
+
+    def schedule_jump(self, row, col):
+        self.scheduled_jumps.append((row, col))
+
+    def advance(self, ms):
+        self.clock += ms
+        return self._advance_result
 
 
-def test_handle_click_switch_selection(engine):
-    game_eng, board, rule_engine = engine
-    game_eng.selected_cell = (0, 0)
-    rule_engine.convert_pixel_to_cell.return_value = (0, 1)
-    board.get_piece_at.return_value = 'wK'
-    rule_engine.is_friendly.return_value = True
-    game_eng.handle_click(50, 150)
-    assert game_eng.selected_cell == (0, 1)
+class TestRequestMoveWithRealCollaborators:
+    def test_game_over_blocks_the_move(self):
+        board = make_board([["wR", "."]])
+        engine = GameEngine(board, jump_duration_ms=1000)
+        engine.game_over = True
+        assert engine.request_move(0, 0, 0, 1) == "game_over"
+
+    def test_empty_source_cell_is_invalid(self):
+        board = make_board([[".", "."]])
+        engine = GameEngine(board, jump_duration_ms=1000)
+        assert engine.request_move(0, 0, 0, 1) == "invalid"
+
+    def test_illegal_shape_is_invalid(self):
+        board = make_board([["wR", "."], [".", "."]])
+        engine = GameEngine(board, jump_duration_ms=1000)
+        assert engine.request_move(0, 0, 1, 1) == "invalid"
+
+    def test_legal_move_is_scheduled(self):
+        board = make_board([["wR", "."]])
+        engine = GameEngine(board, jump_duration_ms=1000)
+        assert engine.request_move(0, 0, 0, 1) == "scheduled"
+        assert engine.has_pending_move_from(0, 0) is True
+
+    def test_second_move_from_same_source_is_blocked(self):
+        board = make_board([["wR", ".", "."]])
+        engine = GameEngine(board, jump_duration_ms=1000)
+        engine.request_move(0, 0, 0, 1)
+        assert engine.request_move(0, 0, 0, 2) == "blocked"
+
+    def test_move_from_airborne_source_is_blocked(self):
+        board = make_board([["wR", "."]])
+        engine = GameEngine(board, jump_duration_ms=1000)
+        engine.request_jump(0, 0)
+        assert engine.request_move(0, 0, 0, 1) == "blocked"
 
 
-def test_handle_click_execute_move(engine):
-    game_eng, board, rule_engine = engine
-    # ודאי שהמנוע מוגדר לבצע מהלכים מיידית
-    game_eng.delayed_movement = False 
-    
-    game_eng.selected_cell = (1, 1)
-    # ... שאר הקוד נשאר אותו דבר ...
-    game_eng.selected_cell = (1, 1)
-    
-    # הגדרות ה-mock
-    board.get_piece_at.side_effect = lambda r, c: 'wP' if (r, c) == (1, 1) else '.'
-    rule_engine.convert_pixel_to_cell.return_value = (2, 2)
-    rule_engine.is_friendly.return_value = False
-    rule_engine.is_valid_move.return_value = True
-    rule_engine.is_path_clear.return_value = True
-    
-    game_eng.handle_click(250, 250)
-    
-    # הדפסת כל הקריאות שבוצעו ל-board
-    print(f"\nMethod calls: {board.method_calls}")
-    print(f"Set piece calls: {board.set_piece_at.call_args_list}")
-    
-    assert game_eng.selected_cell is None
-    board.set_piece_at.assert_any_call(1, 1, '.')
-def test_handle_wait_updates_clock(engine):
-    game_eng, _, _ = engine
-    game_eng.handle_wait(150)
-    assert game_eng.game_clock_ms == 150
+class TestRequestMoveWithFakes:
+    def test_uses_injected_rule_engine_verdict_true(self):
+        board = make_board([["wR", "."]])
+        engine = GameEngine(
+            board, jump_duration_ms=1000,
+            rule_engine=FakeRuleEngine(verdict=True), arbiter=FakeArbiter())
+        assert engine.request_move(0, 0, 0, 1) == "scheduled"
+
+    def test_uses_injected_rule_engine_verdict_false(self):
+        board = make_board([["wR", "."]])
+        engine = GameEngine(
+            board, jump_duration_ms=1000,
+            rule_engine=FakeRuleEngine(verdict=False), arbiter=FakeArbiter())
+        assert engine.request_move(0, 0, 0, 1) == "invalid"
+
+    def test_blocked_via_injected_pending_arbiter(self):
+        board = make_board([["wR", "."]])
+        fake_arbiter = FakeArbiter(pending_from={(0, 0)})
+        engine = GameEngine(
+            board, jump_duration_ms=1000,
+            rule_engine=FakeRuleEngine(verdict=True), arbiter=fake_arbiter)
+        assert engine.request_move(0, 0, 0, 1) == "blocked"
+
+    def test_blocked_via_injected_airborne_arbiter(self):
+        board = make_board([["wR", "."]])
+        fake_arbiter = FakeArbiter(airborne_cells={(0, 0)})
+        engine = GameEngine(
+            board, jump_duration_ms=1000,
+            rule_engine=FakeRuleEngine(verdict=True), arbiter=fake_arbiter)
+        assert engine.request_move(0, 0, 0, 1) == "blocked"
 
 
-def test_create_snapshot(engine):
-    game_eng, board, _ = engine
-    game_eng.game_clock_ms = 450
-    fake_matrix = [['.', 'wK'], ['bK', '.']]
-    board.get_raw_matrix.return_value = fake_matrix
-    snapshot = game_eng.create_snapshot()
-    assert isinstance(snapshot, GameSnapshot)
+class TestRequestJump:
+    def test_game_over_blocks_jump(self):
+        board = make_board([["wR"]])
+        engine = GameEngine(board, jump_duration_ms=1000)
+        engine.game_over = True
+        assert engine.request_jump(0, 0) is False
+
+    def test_empty_cell_cannot_jump(self):
+        board = make_board([["."]])
+        engine = GameEngine(board, jump_duration_ms=1000)
+        assert engine.request_jump(0, 0) is False
+
+    def test_pending_move_blocks_jump(self):
+        board = make_board([["wR", "."]])
+        engine = GameEngine(board, jump_duration_ms=1000)
+        engine.request_move(0, 0, 0, 1)
+        assert engine.request_jump(0, 0) is False
+
+    def test_successful_jump_is_airborne(self):
+        board = make_board([["wR"]])
+        engine = GameEngine(board, jump_duration_ms=1000)
+        assert engine.request_jump(0, 0) is True
+        assert engine.is_airborne(0, 0) is True
 
 
-# --- בדיקות אינטגרציה ---
+class TestAdvanceTimeAndResolveMotion:
+    def test_arrived_move_relocates_piece(self):
+        board = make_board([["wR", "."]])
+        engine = GameEngine(board, jump_duration_ms=1000)
+        engine.request_move(0, 0, 0, 1)
+        engine.advance_time(1000)
+        assert board.get_cell(0, 0) is None
+        assert board.get_cell(0, 1) == Piece("w", "R")
 
-def test_move_piece():
-    board = MappBoard()
-    board.add_row(["wK", "."])
-    board.add_row([".", "."])
-    game = GameEngine(board, delayed_movement=False) # כיבוי השהיה לטסט רגיל
-    game.handle_click(50, 50)
-    game.handle_click(150, 150)
-    assert board.get_piece_at(1, 1) == "wK"
+    def test_capturing_king_sets_game_over(self):
+        board = make_board([["wR", "bK"]])
+        engine = GameEngine(board, jump_duration_ms=1000)
+        engine.request_move(0, 0, 0, 1)
+        engine.advance_time(1000)
+        assert engine.game_over is True
 
+    def test_capturing_non_king_does_not_end_game(self):
+        board = make_board([["wR", "bR"]])
+        engine = GameEngine(board, jump_duration_ms=1000)
+        engine.request_move(0, 0, 0, 1)
+        engine.advance_time(1000)
+        assert engine.game_over is False
 
-# --- בדיקות חדשות (זמן) ---
+    def test_pawn_promotion_on_arrival(self):
+        board = make_board([["."], ["wP"]])
+        engine = GameEngine(board, jump_duration_ms=1000)
+        engine.request_move(1, 0, 0, 0)
+        engine.advance_time(1000)
+        assert board.get_cell(0, 0) == Piece("w", "Q")
 
-def test_move_over_time_before_duration_keeps_original_position():
-    board = MappBoard()
-    board.add_row(["wK", "."])
-    board.add_row([".", "."])
-    game = GameEngine(board, delayed_movement=True)
-    game.handle_click(50, 50)
-    game.handle_click(150, 150)
-    assert board.get_piece_at(0, 0) == "wK"
+    def test_non_promoting_piece_keeps_its_kind(self):
+        board = make_board([["."], ["wR"]])
+        engine = GameEngine(board, jump_duration_ms=1000)
+        engine.request_move(1, 0, 0, 0)
+        engine.advance_time(1000)
+        assert board.get_cell(0, 0) == Piece("w", "R")
 
+    def test_landing_on_still_airborne_destination_kills_mover(self):
+        board = make_board([["wR", "bN"]])
+        engine = GameEngine(board, jump_duration_ms=5000)
+        engine.request_jump(0, 1)  # bN airborne until clock 5000
+        engine.request_move(0, 0, 0, 1)  # arrives at clock 1000
+        engine.advance_time(1000)
+        # Mover is destroyed; the still-airborne piece is untouched.
+        assert board.get_cell(0, 0) is None
+        assert board.get_cell(0, 1) == Piece("b", "N")
 
-def test_move_over_time_after_sufficient_wait_reaches_destination():
-    board = MappBoard()
-    board.add_row(["wK", "."])
-    board.add_row([".", "."])
-    game = GameEngine(board, delayed_movement=True)
-    game.handle_click(50, 50)
-    game.handle_click(150, 150)
-    game.handle_wait(2000) # תואם לנוסחת ה-distance * 1000
-    assert board.get_piece_at(1, 1) == "wK"
-def test_prevent_movement_while_in_progress():
-    """בדיקה שלא ניתן להזיז כלי אחר או את אותו כלי בזמן שיש תנועה בתהליך"""
-    board = MappBoard()
-    board.add_row(["wK", ".", "."])
-    board.add_row([".", ".", "."])
-    
-    # שימוש ב-delayed_movement=True כדי שהתנועה תיקח זמן
-    game = GameEngine(board, delayed_movement=True)
-    
-    # בחירה והתחלת תנועה
-    game.handle_click(50, 50)   # בוחר wK ב-(0,0)
-    game.handle_click(250, 50)  # מתחיל תנועה ל-(0,2)
-    
-    # עכשיו המנוע ב-pending_move. ננסה ללחוץ שוב
-    game.handle_click(50, 50)   # לחיצה נוספת
-    
-    # הבדיקה: הלוח לא אמור להשתנות כי התנועה הראשונה עדיין בעיצומה
-    assert board.get_piece_at(0, 0) == "wK" 
-    assert board.get_piece_at(0, 2) == "."
+    def test_landing_exactly_when_destination_finishes_still_kills_mover(self):
+        board = make_board([["wR", "bN"]])
+        engine = GameEngine(board, jump_duration_ms=1000)
+        engine.request_jump(0, 1)  # bN airborne until clock 1000
+        engine.request_move(0, 0, 0, 1)  # arrives at clock 1000 too
+        engine.advance_time(1000)
+        assert board.get_cell(0, 0) is None
+        assert board.get_cell(0, 1) == Piece("b", "N")
 
+    def test_no_op_when_source_piece_already_gone(self):
+        # Exercises the "piece is None" early-return branch of
+        # _resolve_motion, using an injected fake arbiter so we can hand
+        # back an arbitrary Motion-like object directly.
+        class FakeMotion:
+            from_row, from_col, to_row, to_col = 0, 0, 0, 1
 
-def test_immediate_movement_after_completion():
-    """בדיקה שאחרי סיום תנועה, ניתן להזיז כלי מיד ללא צורך בהמתנה נוספת"""
-    board = MappBoard()
-    board.add_row(["wK", ".", "."])
-    board.add_row([".", ".", "."])
-    
-    game = GameEngine(board, delayed_movement=True)
-    
-    # מהלך ראשון
-    game.handle_click(50, 50)   # (0,0)
-    game.handle_click(150, 50)  # (0,1)
-    
-    # סיום המהלך הראשון
-    game.handle_wait(1000) 
-    assert board.get_piece_at(0, 1) == "wK"
-    
-    # מהלך שני מיידי (בדיקה שאין 'קירור')
-    game.handle_click(150, 50)  # בחירה מ-(0,1)
-    game.handle_click(250, 50)  # תנועה ל-(0,2)
-    
-    # סיום המהלך השני
-    game.handle_wait(1000)
-    assert board.get_piece_at(0, 2) == "wK"
-    assert board.get_piece_at(0, 1) == "."   
-def test_game_over_on_king_capture():
-    """בדיקה שהכאת מלך האויב מסיימת את המשחק"""
-    board = MappBoard()
-    board.add_row(["wK", ".", "bK"])
-    game = GameEngine(board, delayed_movement=False)
-    
-    game.handle_click(50, 50)   # בחירת המלך הלבן
-    game.handle_click(250, 50)  # תנועה להכאת המלך השחור
-    
-    assert game.game_over is True
-
-def test_ignore_clicks_after_game_over():
-    """בדיקה שלאחר סיום המשחק, פקודות נוספות לא מבצעות דבר"""
-    board = MappBoard()
-    board.add_row(["wK", ".", "bK"])
-    game = GameEngine(board, delayed_movement=False)
-    
-    # סיום משחק
-    game.handle_click(50, 50)
-    game.handle_click(250, 50)
-    
-    # ניסיון תנועה נוסף
-    game.handle_click(250, 50) # המיקום החדש של המלך הלבן
-    game.handle_click(50, 50)  # ניסיון תנועה
-    
-    # הלוח צריך להישאר במצב של אחרי הכאה (המלך הלבן ב-250, 50)
-    assert board.get_piece_at(0, 2) == "wK"     
+        board = make_board([[".", "."]])  # source already empty
+        fake_arbiter = FakeArbiter(advance_result=[FakeMotion()])
+        engine = GameEngine(
+            board, jump_duration_ms=1000, arbiter=fake_arbiter)
+        engine.advance_time(1000)  # must not raise, must be a no-op
+        assert board.get_cell(0, 1) is None

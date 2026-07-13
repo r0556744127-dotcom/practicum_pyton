@@ -1,91 +1,33 @@
-import sys
-from MappBoard import MappBoard
-from GameEngine import GameEngine
-from TextTestRender import TextTestRender
-
-class ChessBoardParser:
-    """מנתח קלט של לוח שחמט ופקודות כולל תמיכה בסימני מערכת ועברית"""
-
-    def __init__(self, stream):
-        self.board = MappBoard()
-        self.commands = []
-        self._parse(stream)
-
-    def _parse(self, stream):
-        current_section = None
-
-        for line in stream:
-            line = line.strip()
-            
-            # הסרת סימן ה- > של מערכת הבדיקות אם הוא קיים בתחילת השורה
-            if line.startswith('>'):
-                line = line[1:].strip()
-
-            if not line:
-                continue
-
-            lower_line = line.lower()
-
-            # זיהוי אזור הלוח
-            if lower_line in ("board:", "board", "לוח:", "לוח"):
-                current_section = "board"
-                continue
-
-            # זיהוי אזור הפקודות
-            if lower_line in ("commands:", "commands", "פקודות:", "פקודות"):
-                current_section = "commands"
-                continue
-
-            # קריאת הלוח
-            if current_section == "board":
-                tokens = line.split()
-                if tokens:
-                    self.board.add_row(tokens)
-
-            # קריאת הפקודות
-            elif current_section == "commands":
-                self.commands.append(line)
-
-    def get_board(self):
-        return self.board
-
-    def execute_commands(self, board):
-        engine = GameEngine(board)
-        renderer = TextTestRender()
-
-        for cmd in self.commands:
-            parts = cmd.split()
-            if not parts:
-                continue
-
-            action = parts[0].lower()
-
-            # פקודת לחיצה
-            if action in ("click", "לחץ"):
-                x = int(parts[1])
-                y = int(parts[2])
-                engine.handle_click(x, y)
-
-            # פקודת המתנה
-            elif action in ("wait", "המתן"):
-                ms = int(parts[1])
-                engine.handle_wait(ms)
-
-            # פקודת הדפסה - תופס את "הדפס לוח", "לוח הדפסה", "print"
-            elif action in ("print", "הדפס") or "הדפסה" in cmd or "לוח" in cmd:
-                snapshot = engine.create_snapshot()
-                renderer.display(snapshot)
+from board_parser import BoardParser
+from commands import parse_command
+from game_controller import GameController
 
 
-def main():
-    # קריאת כל השורות מ-sys.stdin והעברתן לפרסר
-    parser = ChessBoardParser(sys.stdin)
-    
-    # שליפת הלוח שנוצר מתוך הקלט
-    board = parser.get_board()
-    
-    # הרצת הפקודות (לחיצות, המתנות והדפסות) על גבי הלוח
-    parser.execute_commands(board)
+def run(lines=None):
+    """Testable entry point: lines is an optional DI point (a list of
+    input strings) so tests can drive the whole pipeline without
+    monkeypatching stdin. main() calls this with no arguments, which
+    reads from stdin exactly as before."""
+    parser = BoardParser()
+
+    try:
+        board, command_lines = parser.parse(lines)
+        controller = GameController(board)
+
+        for line in command_lines:
+            command = parse_command(line)
+            if command is not None:
+                command.execute(controller)
+
+    except ValueError as e:
+        print(f"ERROR {e}")
+
+
+def main():  # pragma: no cover
+    # Thin CLI wrapper around run() that reads real stdin - exercised by
+    # the real subprocess test in test_main.py, not monkeypatching.
+    run()
+
 
 if __name__ == "__main__":
-    main()                
+    main()
