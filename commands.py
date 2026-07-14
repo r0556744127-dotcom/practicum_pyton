@@ -1,3 +1,4 @@
+# תרגום פעולות המשתמש (לחיצות/פקודות) לפעולות שהמנוע מבין.
 class ClickCommand:
     def __init__(self, x, y):
         self.x = x

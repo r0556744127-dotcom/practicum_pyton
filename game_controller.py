@@ -2,7 +2,7 @@ from board_mapper import BoardMapper
 from board_view import BoardRenderer
 from game_engine import GameEngine
 
-
+# החיבור בין הממשק (המשתמש) לבין המנוע.
 class GameController:
     """Controller: the boundary between raw textual/pixel commands and
     the GameEngine. Interprets pixel clicks into grid cells (via

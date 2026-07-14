@@ -1,6 +1,6 @@
 from piece import Piece
 
-
+# מחזיק את הלוח עצמו (המטריצה/מערך).
 class Board:
     """Pure logic Model: the grid of Pieces and cell access.
 

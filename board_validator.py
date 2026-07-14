@@ -1,5 +1,5 @@
 from exceptions import RowWidthMismatch, UnknownToken
-
+# מוודא שהמצב הנוכחי של הלוח חוקי (למשל, שאין יותר מדי כלים).
 VALID_PIECES = {"K", "Q", "R", "B", "N", "P"}
 VALID_COLORS = {"w", "b"}
 

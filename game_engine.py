@@ -1,7 +1,7 @@
 from real_time_arbiter import RealTimeArbiter
 from rule_engine import RuleEngine
 from promotion_rule import PromotionRule
-
+# "הלב" של המשחק – מנהל את הזרימה של התורות.
 
 class GameEngine:
     """Central orchestration layer / Application Service (Rule 8).

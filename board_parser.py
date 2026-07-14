@@ -1,15 +1,11 @@
 from board import Board
 from board_validator import BoardValidator
-
+# הופך פורמט טקסטואלי (כמו מחרוזות) למבנה נתונים שהמשחק מבין.
 
 class BoardParser:
 
     def parse(self, lines=None):
-        """lines is an optional Dependency Injection point: pass an
-        iterable of strings to parse directly (used by tests, avoiding
-        any need to monkeypatch input()/stdin). In production, main.py
-        calls parse() with no arguments and it reads from stdin exactly
-        as before."""
+        
         board_rows = []
         commands = []
 
