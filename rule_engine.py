@@ -13,7 +13,7 @@ class RuleEngine:
     over is exclusively King capture, there is no check/checkmate in
     this game).
     """
-
+# ה"שופט" שמרכז את כל החוקים ומקבל החלטות על מהלכים חוקיים.
     _SLIDING_PIECES = {"R", "B", "Q"}
 
     def is_legal(self, piece, from_row, from_col, to_row, to_col, board):

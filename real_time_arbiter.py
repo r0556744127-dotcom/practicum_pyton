@@ -1,5 +1,5 @@
 from motion import Motion
-
+# אחראי לניהול פעולות בזמן אמת, לוודא שלא קורים שני דברים במקביל או הפרת זמנים.
 
 class RealTimeArbiter:
     """Owns deterministic, virtual-time bookkeeping (Rule 9) for

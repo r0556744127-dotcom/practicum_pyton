@@ -4,7 +4,7 @@ class PieceRule:
     state. Obstruction/path-blocking is handled separately by the
     RuleEngine.
     """
-
+# החוקים של כל כלי ספציפי (איך הוא זז).
     def matches(self, dr, dc):
         raise NotImplementedError
 

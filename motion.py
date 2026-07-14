@@ -5,7 +5,7 @@ class Motion:
     match the roadmap's "Motion" terminology (Rule 8: GameEngine
     "initializes a Motion").
     """
-
+# ניהול תנועת הכלים
     TIME_PER_CELL_MS = 1000  # how many ms it takes to cross one cell
 
     def __init__(self, from_row, from_col, to_row, to_col, start_time, color=None):

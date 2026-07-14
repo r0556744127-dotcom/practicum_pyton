@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-
+# הגדרת אובייקט ה"כלי" (מה זה בכלל כלי, איזה צבע הוא, איזה סוג
 @dataclass(frozen=True)
 class Piece:
     """Pure data model for a single piece. Carries no rendering or
