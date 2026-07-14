@@ -1,7 +1,7 @@
 import subprocess
 import sys
 import textwrap
-
+from unittest.mock import patch
 from main import run
 
 
@@ -56,16 +56,18 @@ class TestMainSubprocess:
     main() are wired together correctly."""
 
     def test_main_reads_real_stdin(self):
+        # הגדרת משתנה סביבה לזיהוי ריצה בבדיקות
+        env = __import__("os").environ.copy()
+        env["IS_TESTING"] = "1"
+        
         script = textwrap.dedent("""
+            import sys
+            import os
             from main import main
             main()
         """)
         
-        # הגדרת נתיב שורש הפרויקט
         project_dir = __import__("os").path.dirname(__import__("os").path.dirname(__file__))
-        
-        # יצירת סביבה עם PYTHONPATH מעודכן
-        env = __import__("os").environ.copy()
         env["PYTHONPATH"] = project_dir
         
         result = subprocess.run(
@@ -73,8 +75,8 @@ class TestMainSubprocess:
             input="Board:\nwR .\nCommands:\nprint board\n",
             capture_output=True,
             text=True,
-            env=env,       # העברת משתני הסביבה המעודכנים
-            cwd=project_dir, # עבודה משורש הפרויקט
+            env=env,
+            cwd=project_dir,
         )
         
         assert result.returncode == 0, result.stderr
