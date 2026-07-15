@@ -48,7 +48,6 @@ def main():
        
         canvas = Img().read(background)
         piece = Img().read(logo, size=(100, 100), keep_aspect=True, interpolation=cv2.INTER_AREA)
-
         h, w = canvas.img.shape[:2]
         canvas.put_text("Demo", h // 2, w // 2, 3.0, color=(255, 0, 0, 255), thickness=5)
         piece.draw_on(canvas, 50, 50)

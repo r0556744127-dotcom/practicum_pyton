@@ -4,20 +4,10 @@ from game_engine import GameEngine
 
 # החיבור בין הממשק (המשתמש) לבין המנוע.
 class GameController:
-    """Controller: the boundary between raw textual/pixel commands and
-    the GameEngine. Interprets pixel clicks into grid cells (via
-    BoardMapper, Rule 4), tracks click-to-click piece selection, and
-    then delegates the actual "is this move legal / schedule it"
-    decision to GameEngine.request_move (Rule 5: decoupling *who
-    clicked* from *whether the move is valid*).
-
-    Exposes the same public methods the command layer already relies on
-    (click, jump, wait, print_board) so commands.py / main.py do not
-    need to change.
-    """
 
     CELL_SIZE = 100
     JUMP_DURATION_MS = 1000
+    
 
     def __init__(self, board, mapper=None, engine=None):
         """mapper and engine are optional Dependency Injection points
@@ -31,7 +21,6 @@ class GameController:
     def click(self, x, y):
         if self.engine.game_over:
             return
-
         row, col = self.mapper.to_cell(x, y)
 
         if not self.board.is_inside(row, col):

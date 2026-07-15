@@ -1,5 +1,5 @@
 class BoardRenderer:
-    # אחראי על התצוגה (איך הלוח נראה).
+    # יודע להדפיס לטרמינל  כטקסט ל אכתמונה אחראי על התצוגה (איך הלוח נראה).
     """View Adapter (Rule 14): maps the Board model's internal state into
     a clean, read-only textual representation for output. This is the
     only place in the codebase that knows how a board is printed - the
