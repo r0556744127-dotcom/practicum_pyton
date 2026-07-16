@@ -1,12 +1,11 @@
 import os
 import json
 from piece import Piece
+from ui.ui_config import PIECES_ROOT
 
 # כל המצבים האפשריים לפי המורה
 ALL_STATES = ("idle", "move", "jump", "long_rest", "short_rest")
-
-# נתיב בסיס לתיקיית pieces (יחסית לשורש הפרויקט)
-PIECES_ROOT = "pieces"
+ 
 
 
 def piece_folder(piece: Piece) -> str:
