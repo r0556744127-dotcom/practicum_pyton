@@ -61,20 +61,21 @@ def build_board_canvas(board, piece_views=None):
                 continue
 
             if piece_views and (row, col) in piece_views:
-                sprite = piece_views[(row, col)].current_sprite()
+                view = piece_views[(row, col)]
+                sprite = view.current_sprite()
+                x, y = view.x_px, view.y_px
             else:
                 path = sprite_path(piece, "idle", 0)
                 sprite = Img().read(path, size=(CELL_SIZE_PX, CELL_SIZE_PX), keep_aspect=True)
                 make_white_transparent(sprite)
+                x, y = mapper.to_pixel(row, col)
+                h, w = sprite.img.shape[:2]
+                x += (CELL_SIZE_PX - w) // 2
+                y += (CELL_SIZE_PX - h) // 2
 
-            x, y = mapper.to_pixel(row, col)
-            h, w = sprite.img.shape[:2]
-            x += (CELL_SIZE_PX - w) // 2
-            y += (CELL_SIZE_PX - h) // 2
             sprite.draw_on(canvas, x, y)
 
     return canvas
-
 def draw_static_board(board):
     """שלב 1 — מציג לוח סטטי פעם אחת."""
     build_board_canvas(board).show()
@@ -107,23 +108,19 @@ def _update_view_state(view: PieceView, engine, row: int, col: int) -> None:
         return
 def sync_piece_views(board, views: dict, controller) -> dict:
     engine = controller.engine
-    occupied = {(r, c) for r, c, _ in _occupied_cells(board)}
-    leftover = {k: v for k, v in views.items() if k not in occupied}
     new_views = {}
     for row, col, piece in _occupied_cells(board):
         key = (row, col)
-        if key in views:
-            view = views[key]
+        existing = views.get(key)
+
+        # ממחזרים View רק אם אותו כלי בדיוק נשאר במשבצת
+        if existing is not None and existing.piece == piece:
+            view = existing
             view.row = row
             view.col = col
-            view.piece = piece
-        elif leftover:
-            old_key, view = leftover.popitem()
-            view.row = row
-            view.col = col
-            view.piece = piece
         else:
             view = PieceView(piece, row, col)
+
         _update_view_state(view, engine, row, col)
         new_views[key] = view
-    return new_views    
+    return new_views

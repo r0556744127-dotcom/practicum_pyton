@@ -12,11 +12,10 @@ def piece_folder(piece: Piece) -> str:
     """
     ממיר כלי לשם תיקייה.
     דוגמאות:
-      Piece('w', 'P') -> 'PW'
-      Piece('b', 'K') -> 'KB'
+      Piece('w', 'P') -> 'wP'
+      Piece('b', 'K') -> 'bK'
     """
-    return f"{piece.kind}{piece.color.upper()}"
-
+    return f"{piece.color}{piece.kind}"
 
 def piece_states_root(piece: Piece) -> str:
     """נתיב לתיקיית states של כלי מסוים."""
