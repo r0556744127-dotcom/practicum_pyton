@@ -1,6 +1,8 @@
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _ROOT)
+sys.path.insert(0, os.path.join(_ROOT, "core"))
 import time
 import cv2
 from board_parser import BoardParser
@@ -60,7 +62,7 @@ def run_ui():
 
         snapshot = build_snapshot(
             controller.board, piece_views, controller.engine,
-            score_tracker)
+            score_tracker, move_tracker, selected=controller.selected)
         canvas = renderer.render(snapshot)
 
         cv2.setMouseCallback(WINDOW_NAME, on_mouse, {

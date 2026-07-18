@@ -75,9 +75,9 @@ class TestReadStdinSubprocess:
         # הגדרת תיקיית הפרויקט כתיקיית האב של תיקיית הטסטים
         project_dir = os.path.dirname(os.path.dirname(__file__))
         
-        # יצירת סביבה עם PYTHONPATH מעודכן
+        # יצירת סביבה עם PYTHONPATH מעודכן (שורש + core)
         env = os.environ.copy()
-        env["PYTHONPATH"] = project_dir
+        env["PYTHONPATH"] = project_dir + os.pathsep + os.path.join(project_dir, "core")
         
         result = subprocess.run(
             [sys.executable, "-c", script],

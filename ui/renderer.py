@@ -25,6 +25,9 @@ class Renderer:
         canvas.img[:, :] = PANEL_COLOR          # רקע פאנל
         canvas.img[:, :bw] = board_img          # הדבקת הלוח משמאל
 
+        if snapshot.selected is not None:
+            self._draw_selection(canvas, snapshot.selected)
+
         for ps in snapshot.pieces:
             ps.sprite.draw_on(canvas, ps.x_px, ps.y_px)
 
@@ -35,30 +38,53 @@ class Renderer:
 
         return canvas
 
+    def _draw_selection(self, canvas, selected):
+        row, col = selected
+        x, y = col * 100, row * 100
+        cv2.rectangle(canvas.img, (x + 3, y + 3), (x + 97, y + 97),
+                      (0, 220, 255, 255), 3)
+
     def _draw_panel(self, canvas, snapshot, board_w):
         x = board_w + 15
 
-        if snapshot.score_text:
-            canvas.put_text("SCORE", x, 40, 0.7,
-                            color=(0, 255, 0, 255), thickness=2)
-            canvas.put_text(snapshot.score_text, x, 75, 0.6,
-                            color=(255, 255, 255, 255), thickness=1)
+        canvas.put_text("KUNG-FU CHESS", x, 35, 0.55,
+                        color=(0, 200, 255, 255), thickness=2)
+        cv2.line(canvas.img, (x, 50), (board_w + PANEL_WIDTH - 15, 50),
+                 (90, 90, 90, 255), 1)
 
-        y = 130
+        canvas.put_text("SCORE", x, 85, 0.7,
+                        color=(0, 255, 0, 255), thickness=2)
+        canvas.put_text(snapshot.score_text, x, 115, 0.6,
+                        color=(255, 255, 255, 255), thickness=1)
+
+        cv2.line(canvas.img, (x, 135), (board_w + PANEL_WIDTH - 15, 135),
+                 (90, 90, 90, 255), 1)
+
+        canvas.put_text("MOVES", x, 165, 0.6,
+                        color=(0, 255, 0, 255), thickness=2)
+        y = 195
         for line in snapshot.moves_lines:
             canvas.put_text(line, x, y, 0.45,
                             color=(200, 200, 200, 255), thickness=1)
             y += 24
 
     def _draw_game_over(self, canvas, board_w, board_h):
-        canvas.put_text("GAME OVER", board_w // 2 - 180, board_h // 2, 1.6,
-                        color=(0, 0, 255, 255), thickness=4)
+        # מחשיך את הלוח (חצי שקוף)
+        board_area = canvas.img[:board_h, :board_w]
+        canvas.img[:board_h, :board_w] = (board_area * 0.4).astype(canvas.img.dtype)
+
+        canvas.put_text("GAME OVER", board_w // 2 - 190, board_h // 2, 1.8,
+                        color=(0, 0, 255, 255), thickness=5)
+        canvas.put_text("Press ESC to exit", board_w // 2 - 110, board_h // 2 + 50,
+                        0.7, color=(255, 255, 255, 255), thickness=2)
 
 
 if __name__ == "__main__":
     import sys
     import os
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, _ROOT)
+    sys.path.insert(0, os.path.join(_ROOT, "core"))
 
     from board_parser import BoardParser
     from game_controller import GameController

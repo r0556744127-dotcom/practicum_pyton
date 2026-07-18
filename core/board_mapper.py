@@ -14,4 +14,4 @@ class BoardMapper:
         rendering layer to know where to draw a piece's sprite."""
         x = col * self.cell_size
         y = row * self.cell_size
-        return x, y 
+        return x, y

@@ -21,10 +21,11 @@ class GameSnapshot:
     score_text: str = ""
     moves_lines: tuple = ()
     game_over: bool = False
+    selected: tuple = None 
 
 
 def build_snapshot(board, piece_views, engine,
-                   score_tracker=None, move_tracker=None) -> GameSnapshot:
+                   score_tracker=None, move_tracker=None,selected=None) -> GameSnapshot:
     """בונה GameSnapshot מהמצב הנוכחי — קורא בלבד."""
     pieces = []
     for view in piece_views.values():
@@ -53,13 +54,17 @@ def build_snapshot(board, piece_views, engine,
         score_text=score_text,
         moves_lines=moves_lines,
         game_over=engine.game_over,
+        selected=selected,
+
     )
 
 
 if __name__ == "__main__":
     import sys
     import os
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, _ROOT)
+    sys.path.insert(0, os.path.join(_ROOT, "core"))
 
     from board_parser import BoardParser
     from game_controller import GameController
