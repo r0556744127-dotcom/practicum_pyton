@@ -28,7 +28,7 @@ class GameEngine:
     "who clicked vs where they want to go" concern).
     """
 
-    def __init__(self, board, jump_duration_ms, rule_engine=None, arbiter=None):
+    def __init__(self, board, jump_duration_ms, rule_engine=None, arbiter=None,bus=None):
         """rule_engine and arbiter are optional Dependency Injection points
         (tests can supply fakes/stubs here instead of monkeypatching);
         production code omits them and gets the real collaborators."""
@@ -36,6 +36,13 @@ class GameEngine:
         self.game_over = False
         self.rule_engine = rule_engine if rule_engine is not None else RuleEngine()
         self.arbiter = arbiter if arbiter is not None else RealTimeArbiter(jump_duration_ms)
+        self.bus = bus
+
+    def _emit(self, event_name, data=None):
+        """פרסום אירוע רק אם ה-Bus סופק."""
+        if self.bus is not None:
+           self.bus.publish(event_name, data)    
+    
 
     def has_pending_move_from(self, row, col):
         return self.arbiter.has_pending_move_from(row, col)
@@ -62,6 +69,11 @@ class GameEngine:
             return "invalid"
 
         self.arbiter.schedule_move(from_row, from_col, to_row, to_col, piece.color)
+        self._emit("move_made", {
+            "from": (from_row, from_col),
+            "to": (to_row, to_col),
+            "color": piece.color,
+        })
         return "scheduled"
 
     def request_jump(self, row, col):
@@ -100,11 +112,34 @@ class GameEngine:
         # Game Over (Rule 11: exclusively King capture)
         if destination is not None and destination.is_king():
             self.game_over = True
+            self._emit("game_over", {"winner": piece.color})
+        if destination is not None:
+            self._emit("piece_captured", {
+                "piece": str(destination),      # e.g. "bQ"
+                "by": piece.color,              # who captured it
+                "at": (motion.to_row, motion.to_col),
+            })
 
         # Pawn promotion (Rule 6/8: dedicated strategy resolves it on arrival)
         piece = PromotionRule.resolve(piece, motion.to_row, self.board)
-
         # Atomic state transition (Rule 10): destination set, then origin
         # cleared - never any in-between state.
-        self.board.set_cell(motion.to_row, motion.to_col, piece)
-        self.board.set_cell(motion.from_row, motion.from_col, None)
+        self.board.set_cell(motion.to_row, motion.to_col, piece)   # כתיבה על היעד
+        self.board.set_cell(motion.from_row, motion.from_col, None) # פינוי המקור
+if __name__ == "__main__":
+    from board_parser import BoardParser
+    from event_bus import EventBus
+
+    bus = EventBus()
+    # subscribe a simple printer to each event:
+    bus.subscribe("move_made", lambda d: print("MOVE:", d))
+    bus.subscribe("piece_captured", lambda d: print("CAPTURE:", d))
+    bus.subscribe("game_over", lambda d: print("GAME OVER:", d))
+
+    board, _ = BoardParser().parse(["Board:", "wP .", "bP .", ". ."])
+    engine = GameEngine(board, 1000, bus=bus)
+
+    # white pawn at (0,0) captures black pawn diagonally? 
+    # (think: is there an enemy on a diagonal? adjust the board if needed)
+    engine.request_move(2, 0, 1, 1)   # white pawn captures black pawn diagonally
+    engine.advance_time(1000)         # let it arrive

@@ -7,6 +7,7 @@ import time
 import cv2
 from board_parser import BoardParser
 from game_controller import GameController
+from event_bus import EventBus
 from ui.ui_config import WINDOW_NAME
 from ui.ui_helpers import sync_piece_views
 from ui.renderer import Renderer
@@ -36,14 +37,23 @@ def on_mouse(event, x, y, flags, param):
 def run_ui():
     parser = BoardParser()
     board, _ = parser.parse(STARTING_BOARD)
-    controller = GameController(board)
+
+    # יצירת ה-Bus ורישום המאזינים (Pub/Sub)
+    bus = EventBus()
+    score_tracker = ScoreTracker()
+    move_tracker = MoveTracker()
+    bus.subscribe("piece_captured", score_tracker.on_capture)
+    bus.subscribe("move_made", move_tracker.on_move)
+
+    # מעבירים את ה-Bus למנוע דרך ה-controller
+    controller = GameController(board, bus=bus)
 
     cv2.namedWindow(WINDOW_NAME)
     prev = time.time()
     piece_views = {}
     renderer = Renderer()
-    score_tracker = ScoreTracker()
-    move_tracker = MoveTracker()
+
+    bus.publish("game_started", {})
 
     while True:
         now = time.time()
@@ -57,8 +67,8 @@ def run_ui():
             view.update(dt_ms)
             view.update_pixel_pos(controller.engine)
 
-        score_tracker.update(controller.board)
-        move_tracker.update(controller.engine)
+        # אין יותר score_tracker.update / move_tracker.update —
+        # ה-Bus מעדכן אותם אוטומטית כשקורים אירועים.
 
         snapshot = build_snapshot(
             controller.board, piece_views, controller.engine,

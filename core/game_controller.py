@@ -9,13 +9,16 @@ class GameController:
     JUMP_DURATION_MS = 1000
     
 
-    def __init__(self, board, mapper=None, engine=None):
+    def __init__(self, board, mapper=None, engine=None, bus=None):
         """mapper and engine are optional Dependency Injection points
         (tests can supply fakes/stubs here instead of monkeypatching);
-        production code omits them and gets the real collaborators."""
+        production code omits them and gets the real collaborators.
+        bus is an optional EventBus passed on to the GameEngine so it can
+        publish events (move_made / piece_captured / game_over)."""
         self.board = board
         self.mapper = mapper if mapper is not None else BoardMapper(self.CELL_SIZE)
-        self.engine = engine if engine is not None else GameEngine(board, self.JUMP_DURATION_MS)
+        self.engine = engine if engine is not None else GameEngine(
+            board, self.JUMP_DURATION_MS, bus=bus)
         self.selected = None
 
     def click(self, x, y):
