@@ -1,6 +1,4 @@
 from dataclasses import dataclass
-
-
 @dataclass(frozen=True)
 class PieceSnapshot:
     """מצב ציור של כלי אחד ברגע נתון — לקריאה בלבד."""
@@ -22,10 +20,12 @@ class GameSnapshot:
     moves_lines: tuple = ()
     game_over: bool = False
     selected: tuple = None 
+    banner: str = None
+
 
 
 def build_snapshot(board, piece_views, engine,
-                   score_tracker=None, move_tracker=None,selected=None) -> GameSnapshot:
+                   score_tracker=None, move_tracker=None,selected=None,banner=None) -> GameSnapshot:
     """בונה GameSnapshot מהמצב הנוכחי — קורא בלבד."""
     pieces = []
     for view in piece_views.values():
@@ -55,7 +55,7 @@ def build_snapshot(board, piece_views, engine,
         moves_lines=moves_lines,
         game_over=engine.game_over,
         selected=selected,
-
+        banner=banner,
     )
 
 

@@ -9,10 +9,9 @@ PANEL_COLOR = (40, 40, 40, 255)
 
 class Renderer:
     """מצייר GameSnapshot: לוח + כלים + פאנל צד. לא מכיר מנוע/state."""
-
     def __init__(self, board_image: str = BOARD_IMAGE):
         self.board_image = board_image
-
+        
     def render(self, snapshot):
         board_img = Img().read(self.board_image).img
         if board_img.shape[2] == 3:
@@ -32,11 +31,17 @@ class Renderer:
             ps.sprite.draw_on(canvas, ps.x_px, ps.y_px)
 
         self._draw_panel(canvas, snapshot, bw)
-
+        if snapshot.banner:
+           self._draw_banner(canvas, snapshot.banner, bw, bh)
+     
         if snapshot.game_over:
             self._draw_game_over(canvas, bw, bh)
 
         return canvas
+    def _draw_banner(self, canvas, text, board_w, board_h):
+        """כרזה גדולה במרכז הלוח (למשל FIGHT! בתחילת המשחק)."""
+        canvas.put_text(text, board_w // 2 - 120, board_h // 2, 2.0,
+                        color=(0, 200, 255, 255), thickness=6)    
 
     def _draw_selection(self, canvas, selected):
         row, col = selected

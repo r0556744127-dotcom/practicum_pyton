@@ -13,7 +13,8 @@ from ui.ui_helpers import sync_piece_views
 from ui.renderer import Renderer
 from ui.game_snapshot import build_snapshot
 from ui.trackers import MoveTracker, ScoreTracker
-
+from ui.sound_player import SoundPlayer
+from ui.banner import BannerEffect
 STARTING_BOARD = [
     "Board:",
     "bR bN bB bQ bK bB bN bR",
@@ -42,9 +43,15 @@ def run_ui():
     bus = EventBus()
     score_tracker = ScoreTracker()
     move_tracker = MoveTracker()
+    sound = SoundPlayer()
+    banner = BannerEffect()
     bus.subscribe("piece_captured", score_tracker.on_capture)
     bus.subscribe("move_made", move_tracker.on_move)
-
+    bus.subscribe("game_over", sound.on_game_over)
+    bus.subscribe("game_started", sound.on_game_started)
+    bus.subscribe("game_started", banner.on_game_started)
+    bus.subscribe("move_made", sound.on_move)
+    bus.subscribe("piece_captured", sound.on_capture)
     # מעבירים את ה-Bus למנוע דרך ה-controller
     controller = GameController(board, bus=bus)
 
@@ -72,7 +79,7 @@ def run_ui():
 
         snapshot = build_snapshot(
             controller.board, piece_views, controller.engine,
-            score_tracker, move_tracker, selected=controller.selected)
+            score_tracker, move_tracker, selected=controller.selected,  banner=banner.current_text())
         canvas = renderer.render(snapshot)
 
         cv2.setMouseCallback(WINDOW_NAME, on_mouse, {
