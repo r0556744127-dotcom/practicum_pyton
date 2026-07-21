@@ -34,7 +34,7 @@ def on_mouse(event, x, y, flags, param):
         controller.click(x, y)
         print(f"click at ({x}, {y})")
 
-
+# יוצר את הלוח, המנוע וה-Bus
 def run_ui():
     parser = BoardParser()
     board, _ = parser.parse(STARTING_BOARD)
