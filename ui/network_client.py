@@ -17,14 +17,12 @@ from ui.ui_helpers import make_white_transparent
 from ui.renderer import Renderer
 from ui.game_snapshot import GameSnapshot, PieceSnapshot
 
-SERVER_URL = "ws://localhost:8765"
+SERVER_URL = "ws://127.0.0.1:8765"
 
-# מטמון ספרייטים: טוענים כל תמונת כלי פעם אחת בלבד
 _sprite_cache = {}
 
 
 def get_sprite(token):
-    """מחזיר ספרייט לאסימון כמו 'bR' — מהמטמון, או טוען מהדיסק."""
     if token not in _sprite_cache:
         piece = Piece.parse(token)
         sprite = Img().read(sprite_path(piece, "idle", 0),
@@ -35,7 +33,6 @@ def get_sprite(token):
 
 
 def build_pieces(board_rows):
-    """הופך את רשימת האסימונים מהשרת ל-PieceSnapshots לציור."""
     pieces = []
     for r, row in enumerate(board_rows):
         for c, token in enumerate(row):
@@ -52,7 +49,6 @@ def build_pieces(board_rows):
 
 
 def handle_click(x, y, state, selected, my_color, ws, mapper):
-    """לחיצה ראשונה בוחרת כלי שלי; שנייה שולחת בקשת מהלך לשרת."""
     row, col = mapper.to_cell(x, y)
     rows = state["board"]
     if not (0 <= row < len(rows) and 0 <= col < len(rows[0])):
@@ -60,11 +56,9 @@ def handle_click(x, y, state, selected, my_color, ws, mapper):
 
     token = rows[row][col]
 
-    # לחיצה על כלי בצבע שלי — בחירה (או החלפת בחירה)
     if token != "." and token[0] == my_color:
         return (row, col)
 
-    # יש כבר כלי נבחר — שולחים בקשת מהלך; השרת יחליט אם חוקי
     if selected is not None:
         ws.send(json.dumps({
             "type": "move",
@@ -82,11 +76,45 @@ def on_mouse(event, x, y, flags, clicks):
 
 
 def run_client():
+    username = input("username: ").strip()
+    password = input("password: ").strip()
     ws = connect(SERVER_URL)
-    welcome = json.loads(ws.recv())          # ההודעה הראשונה: welcome
-    my_color = welcome["color"]
-    print("connected as:", my_color)
+    ws.send(json.dumps({
+        "type": "login",
+        "username": username,
+        "password": password,
+    }))
 
+    # Wait until we get welcome/error (ignore any early state messages)
+    while True:
+        welcome = json.loads(ws.recv())
+        if welcome.get("type") == "error":
+            print("login failed:", welcome.get("message"))
+            ws.close()
+            return
+        if welcome.get("type") == "welcome":
+            break
+
+    my_color = welcome["color"]
+    print("connected as:", my_color,
+          "user:", welcome.get("username"),
+          "elo:", welcome.get("elo"))
+    
+    print("logged in — lobby. Asking server to find a match...")
+    ws.send(json.dumps({"type": "find_match"}))
+
+    my_color = None
+    while my_color is None:
+        msg = json.loads(ws.recv())
+        if msg.get("type") == "searching":
+            print(msg.get("message"))
+        elif msg.get("type") == "search_failed":
+            print(msg.get("message"))
+            ws.close()
+            return
+        elif msg.get("type") == "match_found":
+            my_color = msg["color"]
+            print("MATCH! you are", my_color, "vs", msg.get("opponent"))
     mapper = BoardMapper(CELL_SIZE_PX)
     renderer = Renderer()
     clicks = []
@@ -98,7 +126,6 @@ def run_client():
     cv2.setMouseCallback(title, on_mouse, clicks)
 
     while True:
-        # שואבים את כל העדכונים שהצטברו ושומרים את האחרון
         while True:
             try:
                 data = json.loads(ws.recv(timeout=0))
@@ -106,6 +133,9 @@ def run_client():
                 break
             if data["type"] == "state":
                 state = data
+            elif data["type"] == "move_result":
+                # Bug fix: show why a move did / did not happen
+                print("move_result:", data["result"])
 
         if state is not None:
             while clicks:
@@ -114,12 +144,16 @@ def run_client():
                                         my_color, ws, mapper)
 
             label = {"w": "WHITE", "b": "BLACK"}.get(my_color, "VIEWER")
+            score = f"You are: {label}"
+            remaining = state.get("disconnect_remaining")
+            if remaining is not None:
+                score += f"  |  Opponent left: {remaining}s"
             snapshot = GameSnapshot(
                 rows=len(state["board"]),
                 cols=len(state["board"][0]),
                 clock=0,
                 pieces=build_pieces(state["board"]),
-                score_text=f"You are: {label}",
+                score_text=score,
                 game_over=state["game_over"],
                 selected=selected,
             )

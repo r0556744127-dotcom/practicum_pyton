@@ -41,8 +41,7 @@ class GameEngine:
     def _emit(self, event_name, data=None):
         """פרסום אירוע רק אם ה-Bus סופק."""
         if self.bus is not None:
-           self.bus.publish(event_name, data)    
-    
+            self.bus.publish(event_name, data)
 
     def has_pending_move_from(self, row, col):
         return self.arbiter.has_pending_move_from(row, col)
