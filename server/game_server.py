@@ -55,11 +55,20 @@ class GameServer:
         self.disconnect_deadline = None
         self.disconnect_winner = None
         self.match_players = {}  # {"w": username, "b": username}
+        self.activity = []  # recent log lines for clients
         self.bus.subscribe("game_over", self._on_game_over)
+
+    def log(self, text):
+        self.activity.append(text)
+        if len(self.activity) > 20:
+            self.activity = self.activity[-20:]
+        print(f"[log] {text}")
 
     def _on_game_over(self, data):
         if data and data.get("winner") in ("w", "b"):
             self.last_winner = data["winner"]
+            winner_name = self.match_players.get(data["winner"], data["winner"])
+            self.log(f"game over — winner: {winner_name}")
 
     def assign_color(self):
         taken = {info["color"] for info in self.clients.values()}
@@ -79,6 +88,7 @@ class GameServer:
             "board": BoardRenderer.to_rows(self.controller.board),
             "game_over": self.controller.engine.game_over,
             "disconnect_remaining": remaining,
+            "activity": list(self.activity),
         })
 
     async def broadcast_state(self):
@@ -112,6 +122,7 @@ class GameServer:
             new_w, new_l = self.db.apply_game_result(winner, loser)
             self.elo_applied = True
             print(f"ELO updated: {winner}={new_w}, {loser}={new_l}")
+            self.log(f"ELO updated: {winner}={new_w}, {loser}={new_l}")
         except ValueError as e:
             print("ELO not updated:", e)
 
@@ -154,6 +165,7 @@ class GameServer:
             "room": None,
         }
         print(f"{username} logged in — lobby (ELO {elo})")
+        self.log(f"{username} logged in (ELO {elo})")
 
         try:
             async for message in websocket:
@@ -183,6 +195,8 @@ class GameServer:
                       f"{winner_color} wins in {DISCONNECT_RESIGN_SEC}s if they stay gone")
 
             print(f"{info['username'] if info else '?'} disconnected")
+            if info:
+                self.log(f"{info['username']} disconnected")
 
     async def handle_message(self, websocket, color, msg):
         if msg.get("type") == "create_room":
@@ -197,6 +211,7 @@ class GameServer:
             self.clients[websocket]["room"] = code
             name = self.clients[websocket]["username"]
             print(f"{name} created room {code}")
+            self.log(f"{name} created room {code}")
             await websocket.send(json.dumps({
                 "type": "room_created",
                 "code": code,
@@ -215,6 +230,81 @@ class GameServer:
                     "type": "room_cancelled",
                     "message": "room cancelled",
                 }))
+            return
+
+        if msg.get("type") == "join_room":
+            if websocket in self.waiting:
+                self.waiting.remove(websocket)
+
+            code = str(msg.get("code", "")).strip().upper()
+            room = self.rooms.get(code)
+            if room is None:
+                await websocket.send(json.dumps({
+                    "type": "error",
+                    "message": f"room {code} not found",
+                }))
+                return
+            if room["guest"] is not None:
+                await websocket.send(json.dumps({
+                    "type": "error",
+                    "message": f"room {code} is already full",
+                }))
+                return
+            if room["host"] is websocket:
+                await websocket.send(json.dumps({
+                    "type": "error",
+                    "message": "you cannot join your own room",
+                }))
+                return
+            if room["host"] not in self.clients:
+                del self.rooms[code]
+                await websocket.send(json.dumps({
+                    "type": "error",
+                    "message": f"room {code} host left",
+                }))
+                return
+
+            host = room["host"]
+            room["guest"] = websocket
+            self.clients[websocket]["room"] = code
+            del self.rooms[code]  # match started — room no longer open
+
+            await self.start_match(host, websocket)
+            print(f"ROOM {code}: "
+                  f"{self.clients[host]['username']}(w) vs "
+                  f"{self.clients[websocket]['username']}(b)")
+            self.log(
+                f"room {code} started: "
+                f"{self.clients[host]['username']}(w) vs "
+                f"{self.clients[websocket]['username']}(b)"
+            )
+            return
+
+        if msg.get("type") == "spectate":
+            if websocket in self.waiting:
+                self.waiting.remove(websocket)
+
+            # Need an active match with both colors assigned
+            if not self.match_players or self.controller.engine.game_over:
+                await websocket.send(json.dumps({
+                    "type": "error",
+                    "message": "no active game to watch",
+                }))
+                return
+
+            white_name = self.match_players.get("w")
+            black_name = self.match_players.get("b")
+            self.clients[websocket]["color"] = "viewer"
+            name = self.clients[websocket]["username"]
+            print(f"{name} is spectating {white_name} vs {black_name}")
+            self.log(f"{name} is spectating {white_name} vs {black_name}")
+            await websocket.send(json.dumps({
+                "type": "match_found",
+                "color": "viewer",
+                "opponent": f"{white_name} vs {black_name}",
+                "white": white_name,
+                "black": black_name,
+            }))
             return
 
         if msg.get("type") == "find_match":
@@ -261,6 +351,8 @@ class GameServer:
         self.last_winner = self.disconnect_winner
         self.disconnect_deadline = None
         print(f"Auto-resign: winner={self.last_winner}")
+        winner_name = self.match_players.get(self.last_winner, self.last_winner)
+        self.log(f"auto-resign — winner: {winner_name}")
 
     async def game_loop(self):
         while True:
@@ -270,6 +362,30 @@ class GameServer:
             await self.broadcast_state()
             await asyncio.sleep(TICK_MS / 1000)
             await self.check_search_timeouts()
+
+    async def start_match(self, white_ws, black_ws):
+        """Assign colors and notify both players that a match began."""
+        self.clients[white_ws]["color"] = "w"
+        self.clients[black_ws]["color"] = "b"
+        self.match_players = {
+            "w": self.clients[white_ws]["username"],
+            "b": self.clients[black_ws]["username"],
+        }
+        self.elo_applied = False
+        self.last_winner = None
+        self.disconnect_deadline = None
+        self.disconnect_winner = None
+
+        await white_ws.send(json.dumps({
+            "type": "match_found",
+            "color": "w",
+            "opponent": self.clients[black_ws]["username"],
+        }))
+        await black_ws.send(json.dumps({
+            "type": "match_found",
+            "color": "b",
+            "opponent": self.clients[white_ws]["username"],
+        }))
 
     async def try_match(self, websocket):
         """If another waiter is within ±100 ELO, start a match."""
@@ -287,29 +403,12 @@ class GameServer:
 
             self.waiting.remove(websocket)
             self.waiting.remove(other)
-
-            self.clients[other]["color"] = "w"
-            self.clients[websocket]["color"] = "b"
-            self.match_players = {
-                "w": self.clients[other]["username"],
-                "b": me["username"],
-            }
-            self.elo_applied = False
-            self.last_winner = None
-            self.disconnect_deadline = None
-            self.disconnect_winner = None
-
-            await other.send(json.dumps({
-                "type": "match_found",
-                "color": "w",
-                "opponent": me["username"],
-            }))
-            await websocket.send(json.dumps({
-                "type": "match_found",
-                "color": "b",
-                "opponent": self.clients[other]["username"],
-            }))
+            await self.start_match(other, websocket)
             print(f"MATCH: {self.clients[other]['username']}(w) vs {me['username']}(b)")
+            self.log(
+                f"match started: "
+                f"{self.clients[other]['username']}(w) vs {me['username']}(b)"
+            )
             return True
 
         return False

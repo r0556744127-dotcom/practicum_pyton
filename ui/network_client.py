@@ -95,31 +95,67 @@ def run_client():
         if welcome.get("type") == "welcome":
             break
 
-    my_color = welcome["color"]
-    print("connected as:", my_color,
+    print("logged in —",
           "user:", welcome.get("username"),
           "elo:", welcome.get("elo"))
-    
-    print("logged in — lobby. Asking server to find a match...")
-    ws.send(json.dumps({"type": "find_match"}))
+
+    print()
+    print("LOBBY — choose:")
+    print("  1) Find match (auto)")
+    print("  2) Create room")
+    print("  3) Join room")
+    print("  4) Spectate (watch current game)")
+    choice = input("choice (1/2/3/4): ").strip()
+
+    if choice == "2":
+        ws.send(json.dumps({"type": "create_room"}))
+    elif choice == "3":
+        code = input("room code: ").strip().upper()
+        ws.send(json.dumps({"type": "join_room", "code": code}))
+    elif choice == "4":
+        print("Joining as viewer...")
+        ws.send(json.dumps({"type": "spectate"}))
+    else:
+        print("Asking server to find a match...")
+        ws.send(json.dumps({"type": "find_match"}))
 
     my_color = None
     while my_color is None:
         msg = json.loads(ws.recv())
-        if msg.get("type") == "searching":
+        kind = msg.get("type")
+
+        if kind == "searching":
             print(msg.get("message"))
-        elif msg.get("type") == "search_failed":
+        elif kind == "search_failed":
             print(msg.get("message"))
             ws.close()
             return
-        elif msg.get("type") == "match_found":
+        elif kind == "room_created":
+            print(msg.get("message"))
+            print("Share this code with your friend:", msg.get("code"))
+            print("(waiting for them to join...)")
+        elif kind == "room_cancelled":
+            print(msg.get("message"))
+            ws.close()
+            return
+        elif kind == "error":
+            print("error:", msg.get("message"))
+            ws.close()
+            return
+        elif kind == "match_found":
             my_color = msg["color"]
-            print("MATCH! you are", my_color, "vs", msg.get("opponent"))
+            if my_color == "viewer":
+                print("WATCHING:", msg.get("opponent"))
+            else:
+                print("MATCH! you are", my_color, "vs", msg.get("opponent"))
+        # ignore early "state" messages while waiting in lobby
+
     mapper = BoardMapper(CELL_SIZE_PX)
     renderer = Renderer()
     clicks = []
     selected = None
     state = None
+    seen_activity = 0
 
     title = f"{WINDOW_NAME} - {my_color}"
     cv2.namedWindow(title)
@@ -134,10 +170,14 @@ def run_client():
             if data["type"] == "state":
                 state = data
             elif data["type"] == "move_result":
-                # Bug fix: show why a move did / did not happen
                 print("move_result:", data["result"])
 
         if state is not None:
+            activity = state.get("activity") or []
+            while seen_activity < len(activity):
+                print("[activity]", activity[seen_activity])
+                seen_activity += 1
+
             while clicks:
                 x, y = clicks.pop(0)
                 selected = handle_click(x, y, state, selected,
@@ -148,6 +188,8 @@ def run_client():
             remaining = state.get("disconnect_remaining")
             if remaining is not None:
                 score += f"  |  Opponent left: {remaining}s"
+            if activity:
+                score += f"  |  {activity[-1]}"
             snapshot = GameSnapshot(
                 rows=len(state["board"]),
                 cols=len(state["board"][0]),
