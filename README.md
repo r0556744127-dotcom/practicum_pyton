@@ -1,5 +1,17 @@
 # Kung-Fu Chess (CTD 26)
 
+## Server design (`server/`)
+
+| File | Role |
+|------|------|
+| `game_server.py` | Entry point: login, message routing, game loop |
+| `rooms.py` | Create / Join / Cancel / viewers / spectate |
+| `matchmaking.py` | Play: ELO ±100 queue + 1 min timeout |
+| `session.py` | Start match, scores, ELO update, disconnect resign |
+| `broadcast.py` | Build `state` JSON + activity log + broadcast |
+| `constants.py` | Timeouts, board layout, capture points |
+| `users_db.py` / `elo.py` | Auth + rating |
+
 ## Setup (once)
 
 ```powershell

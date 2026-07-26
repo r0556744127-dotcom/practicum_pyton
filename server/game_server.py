@@ -1,19 +1,22 @@
+"""
+Game server entry point — wires modules together (good design / SRP).
+
+Modules:
+  constants.py   — shared numbers / starting board
+  broadcast.py   — state JSON + activity log + broadcast
+  session.py     — match start, scores, ELO, disconnect resign
+  matchmaking.py — Play / find opponent by ELO
+  rooms.py       — Create / Join / Cancel / viewers / spectate
+  users_db.py    — SQLite auth + ELO storage
+  elo.py         — ELO math
+"""
 import sys
 import os
-import time
-import random
-import string
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 sys.path.insert(0, os.path.join(_ROOT, "core"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-FIND_TIMEOUT_SEC = 60
-DISCONNECT_RESIGN_SEC = 20
-
-# Same capture values as ui/ui_config.CAPTURE_POINTS
-CAPTURE_POINTS = {"P": 1, "N": 3, "B": 3, "R": 5, "Q": 9, "K": 0}
 
 import asyncio
 import json
@@ -21,27 +24,13 @@ import websockets
 from board_parser import BoardParser
 from game_controller import GameController
 from event_bus import EventBus
-from board_view import BoardRenderer
 from users_db import UsersDB
 
-
-def make_room_code():
-    return "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
-
-
-STARTING_BOARD = [
-    "Board:",
-    "bR bN bB bQ bK bB bN bR",
-    "bP bP bP bP bP bP bP bP",
-    ". . . . . . . .",
-    ". . . . . . . .",
-    ". . . . . . . .",
-    ". . . . . . . .",
-    "wP wP wP wP wP wP wP wP",
-    "wR wN wB wQ wK wB wN wR",
-]
-
-TICK_MS = 50
+from constants import STARTING_BOARD, TICK_MS
+from broadcast import StateBroadcaster
+from session import MatchSession
+from matchmaking import Matchmaker
+from rooms import RoomManager
 
 
 class GameServer:
@@ -50,130 +39,27 @@ class GameServer:
         self.bus = EventBus()
         self.controller = GameController(board, bus=self.bus)
         self.db = UsersDB()
-        self.clients = {}  # websocket -> {"color", "username", "elo", ...}
+
+        # Shared runtime state
+        self.clients = {}  # websocket -> {color, username, elo, room}
         self.waiting = []
-        self.rooms = {}  # code -> {"host": websocket, "guest": None}
+        self.rooms = {}
         self.elo_applied = False
         self.last_winner = None
         self.disconnect_deadline = None
         self.disconnect_winner = None
-        self.match_players = {}  # {"w": username, "b": username}
-        self.activity = []  # recent log lines for clients
-        self.bus_events = []  # recent bus events forwarded to clients
+        self.match_players = {}
+        self.activity = []
+        self.bus_events = []
         self.scores = {"w": 0, "b": 0}
         self.move_log = []
         self.current_room_code = None
-        self.bus.subscribe("game_over", self._on_game_over)
-        self.bus.subscribe("move_made", self._on_bus_move)
-        self.bus.subscribe("piece_captured", self._on_bus_capture)
 
-    def log(self, text):
-        self.activity.append(text)
-        if len(self.activity) > 20:
-            self.activity = self.activity[-20:]
-        print(f"[log] {text}")
-
-    def _push_bus_event(self, name, data):
-        self.bus_events.append({"event": name, "data": data or {}})
-        if len(self.bus_events) > 20:
-            self.bus_events = self.bus_events[-20:]
-
-    def _on_bus_move(self, data):
-        self._push_bus_event("move_made", data)
-        if data:
-            line = f"{data.get('color')}: {data.get('from')}->{data.get('to')}"
-            self.move_log.append(line)
-            if len(self.move_log) > 12:
-                self.move_log = self.move_log[-12:]
-
-    def _on_bus_capture(self, data):
-        self._push_bus_event("piece_captured", data)
-        if data and data.get("by") in ("w", "b") and data.get("piece"):
-            kind = data["piece"][1]
-            self.scores[data["by"]] += CAPTURE_POINTS.get(kind, 0)
-
-    def _on_game_over(self, data):
-        if data and data.get("winner") in ("w", "b"):
-            self.last_winner = data["winner"]
-            winner_name = self.match_players.get(data["winner"], data["winner"])
-            self.log(f"game over — winner: {winner_name}")
-            self._push_bus_event("game_over", data)
-
-    def pending_motions_payload(self):
-        arb = self.controller.engine.arbiter
-        out = []
-        for m in arb.pending_motions:
-            piece = self.controller.board.get_cell(m.from_row, m.from_col)
-            out.append({
-                "from": [m.from_row, m.from_col],
-                "to": [m.to_row, m.to_col],
-                "arrival_time": m.arrival_time,
-                "token": str(piece) if piece else None,
-            })
-        return out, arb.clock
-
-    def assign_color(self):
-        taken = {info["color"] for info in self.clients.values()}
-        if "w" not in taken:
-            return "w"
-        if "b" not in taken:
-            return "b"
-        return "viewer"
-
-    def state_message(self):
-        remaining = None
-        if self.disconnect_deadline is not None:
-            remaining = max(0, int(self.disconnect_deadline - time.time()))
-
-        pending, clock = self.pending_motions_payload()
-        return json.dumps({
-            "type": "state",
-            "board": BoardRenderer.to_rows(self.controller.board),
-            "game_over": self.controller.engine.game_over,
-            "disconnect_remaining": remaining,
-            "activity": list(self.activity),
-            "bus_events": list(self.bus_events),
-            "room_code": self.current_room_code,
-            "scores": dict(self.scores),
-            "moves": list(self.move_log),
-            "pending": pending,
-            "clock": clock,
-        })
-
-    async def broadcast_state(self):
-        msg = self.state_message()
-        for ws in list(self.clients):
-            try:
-                await ws.send(msg)
-            except websockets.ConnectionClosed:
-                pass
-
-    def maybe_apply_elo(self):
-        if self.elo_applied or not self.controller.engine.game_over:
-            return
-        if self.last_winner not in ("w", "b"):
-            return
-
-        by_color = dict(self.match_players)
-        for info in self.clients.values():
-            if info["username"] and info["color"] in ("w", "b"):
-                by_color[info["color"]] = info["username"]
-
-        if "w" not in by_color or "b" not in by_color:
-            return
-
-        winner_color = self.last_winner
-        loser_color = "b" if winner_color == "w" else "w"
-        winner = by_color[winner_color]
-        loser = by_color[loser_color]
-
-        try:
-            new_w, new_l = self.db.apply_game_result(winner, loser)
-            self.elo_applied = True
-            print(f"ELO updated: {winner}={new_w}, {loser}={new_l}")
-            self.log(f"ELO updated: {winner}={new_w}, {loser}={new_l}")
-        except ValueError as e:
-            print("ELO not updated:", e)
+        # Collaborators (each module owns one concern)
+        self.broadcaster = StateBroadcaster(self)
+        self.session = MatchSession(self)
+        self.matchmaker = Matchmaker(self)
+        self.room_manager = RoomManager(self)
 
     async def handler(self, websocket):
         try:
@@ -183,7 +69,7 @@ class GameServer:
             await websocket.close()
             return
 
-        # Register (optional) then login — first message may be either
+        # Register (optional) then login
         if msg.get("type") == "register":
             ok, text = self.db.register(
                 msg.get("username", ""), msg.get("password", ""))
@@ -230,7 +116,7 @@ class GameServer:
             "room": None,
         }
         print(f"{username} logged in — lobby (ELO {elo})")
-        self.log(f"{username} logged in (ELO {elo})")
+        self.broadcaster.log(f"{username} logged in (ELO {elo})")
 
         try:
             async for message in websocket:
@@ -244,169 +130,33 @@ class GameServer:
             if websocket in self.waiting:
                 self.waiting.remove(websocket)
 
-            code = info.get("room") if info else None
-            if code and code in self.rooms:
-                room = self.rooms[code]
-                if room["host"] is websocket and room["guest"] is None:
-                    del self.rooms[code]
-                    print(f"room {code} removed (host left)")
-
-            if (info and info.get("color") in ("w", "b")
-                    and not self.controller.engine.game_over):
-                winner_color = "b" if info["color"] == "w" else "w"
-                self.disconnect_winner = winner_color
-                self.disconnect_deadline = time.time() + DISCONNECT_RESIGN_SEC
-                print(f"{info['username']} ({info['color']}) left; "
-                      f"{winner_color} wins in {DISCONNECT_RESIGN_SEC}s if they stay gone")
+            self.room_manager.cleanup_on_disconnect(websocket, info)
+            self.session.on_player_disconnect(info)
 
             print(f"{info['username'] if info else '?'} disconnected")
             if info:
-                self.log(f"{info['username']} disconnected")
+                self.broadcaster.log(f"{info['username']} disconnected")
 
     async def handle_message(self, websocket, color, msg):
-        if msg.get("type") == "create_room":
-            if websocket in self.waiting:
-                self.waiting.remove(websocket)
+        kind = msg.get("type")
 
-            code = make_room_code()
-            while code in self.rooms:
-                code = make_room_code()
-
-            self.rooms[code] = {
-                "host": websocket, "guest": None, "active": False, "viewers": [],
-            }
-            self.clients[websocket]["room"] = code
-            self.current_room_code = code
-            name = self.clients[websocket]["username"]
-            print(f"{name} created room {code}")
-            self.log(f"{name} created room {code}")
-            await websocket.send(json.dumps({
-                "type": "room_created",
-                "code": code,
-                "message": f"room {code} — waiting for guest...",
-            }))
+        if kind == "create_room":
+            await self.room_manager.create_room(websocket)
+            return
+        if kind == "cancel_room":
+            await self.room_manager.cancel_room(websocket)
+            return
+        if kind == "join_room":
+            await self.room_manager.join_room(websocket, msg)
+            return
+        if kind == "spectate":
+            await self.room_manager.spectate(websocket)
+            return
+        if kind == "find_match":
+            await self.matchmaker.find_match(websocket)
             return
 
-        if msg.get("type") == "cancel_room":
-            code = self.clients[websocket].get("room")
-            room = self.rooms.get(code) if code else None
-            if room and room["host"] is websocket and room["guest"] is None:
-                del self.rooms[code]
-                self.clients[websocket]["room"] = None
-                if self.current_room_code == code:
-                    self.current_room_code = None
-                print(f"room {code} cancelled")
-                await websocket.send(json.dumps({
-                    "type": "room_cancelled",
-                    "message": "room cancelled",
-                }))
-            return
-
-        if msg.get("type") == "join_room":
-            if websocket in self.waiting:
-                self.waiting.remove(websocket)
-
-            code = str(msg.get("code", "")).strip().upper()
-            room = self.rooms.get(code)
-            if room is None:
-                await websocket.send(json.dumps({
-                    "type": "error",
-                    "message": f"room {code} not found",
-                }))
-                return
-            if room["host"] is websocket:
-                await websocket.send(json.dumps({
-                    "type": "error",
-                    "message": "you cannot join your own room",
-                }))
-                return
-            if room["host"] not in self.clients:
-                del self.rooms[code]
-                await websocket.send(json.dumps({
-                    "type": "error",
-                    "message": f"room {code} host left",
-                }))
-                return
-
-            # 3rd+ player joining same room → viewer
-            if room["guest"] is not None or room.get("active"):
-                self.clients[websocket]["color"] = "viewer"
-                self.clients[websocket]["room"] = code
-                room.setdefault("viewers", []).append(websocket)
-                white = self.match_players.get("w", "?")
-                black = self.match_players.get("b", "?")
-                name = self.clients[websocket]["username"]
-                print(f"{name} joined room {code} as viewer")
-                self.log(f"{name} joined room {code} as viewer")
-                await websocket.send(json.dumps({
-                    "type": "match_found",
-                    "color": "viewer",
-                    "opponent": f"{white} vs {black}",
-                    "code": code,
-                    "white": white,
-                    "black": black,
-                }))
-                return
-
-            host = room["host"]
-            room["guest"] = websocket
-            room["active"] = True
-            self.clients[websocket]["room"] = code
-            self.current_room_code = code
-
-            await self.start_match(host, websocket)
-            print(f"ROOM {code}: "
-                  f"{self.clients[host]['username']}(w) vs "
-                  f"{self.clients[websocket]['username']}(b)")
-            self.log(
-                f"room {code} started: "
-                f"{self.clients[host]['username']}(w) vs "
-                f"{self.clients[websocket]['username']}(b)"
-            )
-            return
-
-        if msg.get("type") == "spectate":
-            if websocket in self.waiting:
-                self.waiting.remove(websocket)
-
-            # Need an active match with both colors assigned
-            if not self.match_players or self.controller.engine.game_over:
-                await websocket.send(json.dumps({
-                    "type": "error",
-                    "message": "no active game to watch",
-                }))
-                return
-
-            white_name = self.match_players.get("w")
-            black_name = self.match_players.get("b")
-            self.clients[websocket]["color"] = "viewer"
-            name = self.clients[websocket]["username"]
-            print(f"{name} is spectating {white_name} vs {black_name}")
-            self.log(f"{name} is spectating {white_name} vs {black_name}")
-            await websocket.send(json.dumps({
-                "type": "match_found",
-                "color": "viewer",
-                "opponent": f"{white_name} vs {black_name}",
-                "white": white_name,
-                "black": black_name,
-            }))
-            return
-
-        if msg.get("type") == "find_match":
-            if websocket not in self.waiting:
-                self.waiting.append(websocket)
-                self.clients[websocket]["wait_since"] = time.time()
-
-            name = self.clients[websocket]["username"]
-            print(f"{name} is searching...")
-            await websocket.send(json.dumps({
-                "type": "searching",
-                "message": "looking for opponent...",
-            }))
-            await self.try_match(websocket)
-            return
-
-        if msg.get("type") != "move" or color not in ("w", "b"):
+        if kind != "move" or color not in ("w", "b"):
             return
 
         (fr_r, fr_c), (to_r, to_c) = msg["from"], msg["to"]
@@ -423,107 +173,14 @@ class GameServer:
             "type": "move_result", "result": result
         }))
 
-    def check_disconnect_resign(self):
-        if self.disconnect_deadline is None:
-            return
-        if time.time() < self.disconnect_deadline:
-            return
-        if self.controller.engine.game_over:
-            self.disconnect_deadline = None
-            return
-
-        self.controller.engine.game_over = True
-        self.last_winner = self.disconnect_winner
-        self.disconnect_deadline = None
-        print(f"Auto-resign: winner={self.last_winner}")
-        winner_name = self.match_players.get(self.last_winner, self.last_winner)
-        self.log(f"auto-resign — winner: {winner_name}")
-
     async def game_loop(self):
         while True:
             self.controller.wait(TICK_MS)
-            self.check_disconnect_resign()
-            self.maybe_apply_elo()
-            await self.broadcast_state()
+            self.session.check_disconnect_resign()
+            self.session.maybe_apply_elo()
+            await self.broadcaster.broadcast_state()
             await asyncio.sleep(TICK_MS / 1000)
-            await self.check_search_timeouts()
-
-    async def start_match(self, white_ws, black_ws):
-        """Assign colors and notify both players that a match began."""
-        self.clients[white_ws]["color"] = "w"
-        self.clients[black_ws]["color"] = "b"
-        self.match_players = {
-            "w": self.clients[white_ws]["username"],
-            "b": self.clients[black_ws]["username"],
-        }
-        self.elo_applied = False
-        self.last_winner = None
-        self.disconnect_deadline = None
-        self.disconnect_winner = None
-        self.scores = {"w": 0, "b": 0}
-        self.move_log = []
-        self.bus_events = []
-        self.bus.publish("game_started", {})
-
-        payload_w = {
-            "type": "match_found",
-            "color": "w",
-            "opponent": self.clients[black_ws]["username"],
-            "code": self.current_room_code,
-        }
-        payload_b = {
-            "type": "match_found",
-            "color": "b",
-            "opponent": self.clients[white_ws]["username"],
-            "code": self.current_room_code,
-        }
-        await white_ws.send(json.dumps(payload_w))
-        await black_ws.send(json.dumps(payload_b))
-
-    async def try_match(self, websocket):
-        """If another waiter is within ±100 ELO, start a match."""
-        me = self.clients[websocket]
-        my_elo = me["elo"]
-
-        for other in list(self.waiting):
-            if other is websocket:
-                continue
-            if other not in self.clients:
-                continue
-            other_elo = self.clients[other]["elo"]
-            if abs(other_elo - my_elo) > 100:
-                continue
-
-            self.waiting.remove(websocket)
-            self.waiting.remove(other)
-            await self.start_match(other, websocket)
-            print(f"MATCH: {self.clients[other]['username']}(w) vs {me['username']}(b)")
-            self.log(
-                f"match started: "
-                f"{self.clients[other]['username']}(w) vs {me['username']}(b)"
-            )
-            return True
-
-        return False
-
-    async def check_search_timeouts(self):
-        now = time.time()
-        for ws in list(self.waiting):
-            info = self.clients.get(ws)
-            if not info:
-                self.waiting.remove(ws)
-                continue
-            since = info.get("wait_since", now)
-            if now - since >= FIND_TIMEOUT_SEC:
-                self.waiting.remove(ws)
-                try:
-                    await ws.send(json.dumps({
-                        "type": "search_failed",
-                        "message": "could not find opponent within 1 minute",
-                    }))
-                except Exception:
-                    pass
-                print(f"{info['username']} search timed out")
+            await self.matchmaker.check_search_timeouts()
 
 
 async def main():
