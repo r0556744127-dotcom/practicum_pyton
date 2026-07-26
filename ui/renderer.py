@@ -59,15 +59,33 @@ class Renderer:
 
         canvas.put_text("SCORE", x, 85, 0.7,
                         color=(0, 255, 0, 255), thickness=2)
-        canvas.put_text(snapshot.score_text, x, 115, 0.6,
-                        color=(255, 255, 255, 255), thickness=1)
 
-        cv2.line(canvas.img, (x, 135), (board_w + PANEL_WIDTH - 15, 135),
+        # Prefer clear White/Black lines (network client sets these);
+        # fall back to score_text for older local snapshots.
+        white_s = getattr(snapshot, "white_score", None)
+        black_s = getattr(snapshot, "black_score", None)
+        if white_s is not None and black_s is not None:
+            canvas.put_text(f"White: {white_s}", x, 115, 0.65,
+                            color=(255, 255, 255, 255), thickness=2)
+            canvas.put_text(f"Black: {black_s}", x, 145, 0.65,
+                            color=(255, 255, 255, 255), thickness=2)
+            status_y = 175
+            if snapshot.score_text:
+                canvas.put_text(snapshot.score_text, x, status_y, 0.45,
+                                color=(180, 180, 180, 255), thickness=1)
+                status_y += 22
+            line_y = status_y + 8
+        else:
+            canvas.put_text(snapshot.score_text, x, 115, 0.55,
+                            color=(255, 255, 255, 255), thickness=1)
+            line_y = 135
+
+        cv2.line(canvas.img, (x, line_y), (board_w + PANEL_WIDTH - 15, line_y),
                  (90, 90, 90, 255), 1)
 
-        canvas.put_text("MOVES", x, 165, 0.6,
+        canvas.put_text("MOVES", x, line_y + 30, 0.6,
                         color=(0, 255, 0, 255), thickness=2)
-        y = 195
+        y = line_y + 60
         for line in snapshot.moves_lines:
             canvas.put_text(line, x, y, 0.45,
                             color=(200, 200, 200, 255), thickness=1)

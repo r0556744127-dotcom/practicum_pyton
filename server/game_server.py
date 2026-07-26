@@ -12,6 +12,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 FIND_TIMEOUT_SEC = 60
 DISCONNECT_RESIGN_SEC = 20
 
+# Same capture values as ui/ui_config.CAPTURE_POINTS
+CAPTURE_POINTS = {"P": 1, "N": 3, "B": 3, "R": 5, "Q": 9, "K": 0}
+
 import asyncio
 import json
 import websockets
@@ -56,7 +59,13 @@ class GameServer:
         self.disconnect_winner = None
         self.match_players = {}  # {"w": username, "b": username}
         self.activity = []  # recent log lines for clients
+        self.bus_events = []  # recent bus events forwarded to clients
+        self.scores = {"w": 0, "b": 0}
+        self.move_log = []
+        self.current_room_code = None
         self.bus.subscribe("game_over", self._on_game_over)
+        self.bus.subscribe("move_made", self._on_bus_move)
+        self.bus.subscribe("piece_captured", self._on_bus_capture)
 
     def log(self, text):
         self.activity.append(text)
@@ -64,11 +73,44 @@ class GameServer:
             self.activity = self.activity[-20:]
         print(f"[log] {text}")
 
+    def _push_bus_event(self, name, data):
+        self.bus_events.append({"event": name, "data": data or {}})
+        if len(self.bus_events) > 20:
+            self.bus_events = self.bus_events[-20:]
+
+    def _on_bus_move(self, data):
+        self._push_bus_event("move_made", data)
+        if data:
+            line = f"{data.get('color')}: {data.get('from')}->{data.get('to')}"
+            self.move_log.append(line)
+            if len(self.move_log) > 12:
+                self.move_log = self.move_log[-12:]
+
+    def _on_bus_capture(self, data):
+        self._push_bus_event("piece_captured", data)
+        if data and data.get("by") in ("w", "b") and data.get("piece"):
+            kind = data["piece"][1]
+            self.scores[data["by"]] += CAPTURE_POINTS.get(kind, 0)
+
     def _on_game_over(self, data):
         if data and data.get("winner") in ("w", "b"):
             self.last_winner = data["winner"]
             winner_name = self.match_players.get(data["winner"], data["winner"])
             self.log(f"game over — winner: {winner_name}")
+            self._push_bus_event("game_over", data)
+
+    def pending_motions_payload(self):
+        arb = self.controller.engine.arbiter
+        out = []
+        for m in arb.pending_motions:
+            piece = self.controller.board.get_cell(m.from_row, m.from_col)
+            out.append({
+                "from": [m.from_row, m.from_col],
+                "to": [m.to_row, m.to_col],
+                "arrival_time": m.arrival_time,
+                "token": str(piece) if piece else None,
+            })
+        return out, arb.clock
 
     def assign_color(self):
         taken = {info["color"] for info in self.clients.values()}
@@ -83,12 +125,19 @@ class GameServer:
         if self.disconnect_deadline is not None:
             remaining = max(0, int(self.disconnect_deadline - time.time()))
 
+        pending, clock = self.pending_motions_payload()
         return json.dumps({
             "type": "state",
             "board": BoardRenderer.to_rows(self.controller.board),
             "game_over": self.controller.engine.game_over,
             "disconnect_remaining": remaining,
             "activity": list(self.activity),
+            "bus_events": list(self.bus_events),
+            "room_code": self.current_room_code,
+            "scores": dict(self.scores),
+            "moves": list(self.move_log),
+            "pending": pending,
+            "clock": clock,
         })
 
     async def broadcast_state(self):
@@ -133,6 +182,22 @@ class GameServer:
         except Exception:
             await websocket.close()
             return
+
+        # Register (optional) then login — first message may be either
+        if msg.get("type") == "register":
+            ok, text = self.db.register(
+                msg.get("username", ""), msg.get("password", ""))
+            await websocket.send(json.dumps({
+                "type": "register_result", "ok": ok, "message": text,
+            }))
+            if not ok:
+                await websocket.close()
+                return
+            msg = {
+                "type": "login",
+                "username": msg.get("username", ""),
+                "password": msg.get("password", ""),
+            }
 
         if msg.get("type") != "login":
             await websocket.send(json.dumps({
@@ -207,8 +272,11 @@ class GameServer:
             while code in self.rooms:
                 code = make_room_code()
 
-            self.rooms[code] = {"host": websocket, "guest": None}
+            self.rooms[code] = {
+                "host": websocket, "guest": None, "active": False, "viewers": [],
+            }
             self.clients[websocket]["room"] = code
+            self.current_room_code = code
             name = self.clients[websocket]["username"]
             print(f"{name} created room {code}")
             self.log(f"{name} created room {code}")
@@ -225,6 +293,8 @@ class GameServer:
             if room and room["host"] is websocket and room["guest"] is None:
                 del self.rooms[code]
                 self.clients[websocket]["room"] = None
+                if self.current_room_code == code:
+                    self.current_room_code = None
                 print(f"room {code} cancelled")
                 await websocket.send(json.dumps({
                     "type": "room_cancelled",
@@ -244,12 +314,6 @@ class GameServer:
                     "message": f"room {code} not found",
                 }))
                 return
-            if room["guest"] is not None:
-                await websocket.send(json.dumps({
-                    "type": "error",
-                    "message": f"room {code} is already full",
-                }))
-                return
             if room["host"] is websocket:
                 await websocket.send(json.dumps({
                     "type": "error",
@@ -264,10 +328,31 @@ class GameServer:
                 }))
                 return
 
+            # 3rd+ player joining same room → viewer
+            if room["guest"] is not None or room.get("active"):
+                self.clients[websocket]["color"] = "viewer"
+                self.clients[websocket]["room"] = code
+                room.setdefault("viewers", []).append(websocket)
+                white = self.match_players.get("w", "?")
+                black = self.match_players.get("b", "?")
+                name = self.clients[websocket]["username"]
+                print(f"{name} joined room {code} as viewer")
+                self.log(f"{name} joined room {code} as viewer")
+                await websocket.send(json.dumps({
+                    "type": "match_found",
+                    "color": "viewer",
+                    "opponent": f"{white} vs {black}",
+                    "code": code,
+                    "white": white,
+                    "black": black,
+                }))
+                return
+
             host = room["host"]
             room["guest"] = websocket
+            room["active"] = True
             self.clients[websocket]["room"] = code
-            del self.rooms[code]  # match started — room no longer open
+            self.current_room_code = code
 
             await self.start_match(host, websocket)
             print(f"ROOM {code}: "
@@ -375,17 +460,25 @@ class GameServer:
         self.last_winner = None
         self.disconnect_deadline = None
         self.disconnect_winner = None
+        self.scores = {"w": 0, "b": 0}
+        self.move_log = []
+        self.bus_events = []
+        self.bus.publish("game_started", {})
 
-        await white_ws.send(json.dumps({
+        payload_w = {
             "type": "match_found",
             "color": "w",
             "opponent": self.clients[black_ws]["username"],
-        }))
-        await black_ws.send(json.dumps({
+            "code": self.current_room_code,
+        }
+        payload_b = {
             "type": "match_found",
             "color": "b",
             "opponent": self.clients[white_ws]["username"],
-        }))
+            "code": self.current_room_code,
+        }
+        await white_ws.send(json.dumps(payload_w))
+        await black_ws.send(json.dumps(payload_b))
 
     async def try_match(self, websocket):
         """If another waiter is within ±100 ELO, start a match."""

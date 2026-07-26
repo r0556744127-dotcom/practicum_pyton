@@ -19,8 +19,10 @@ class GameSnapshot:
     score_text: str = ""
     moves_lines: tuple = ()
     game_over: bool = False
-    selected: tuple = None 
+    selected: tuple = None
     banner: str = None
+    white_score: int = None
+    black_score: int = None
 
 
 
@@ -38,9 +40,13 @@ def build_snapshot(board, piece_views, engine,
         ))
 
     score_text = ""
+    white_score = None
+    black_score = None
     if score_tracker is not None:
         s = score_tracker.score
-        score_text = f"White: {s['w']}   Black: {s['b']}"
+        score_text = f"You are playing"
+        white_score = s["w"]
+        black_score = s["b"]
 
     moves_lines = ()
     if move_tracker is not None:
@@ -56,6 +62,8 @@ def build_snapshot(board, piece_views, engine,
         game_over=engine.game_over,
         selected=selected,
         banner=banner,
+        white_score=white_score,
+        black_score=black_score,
     )
 
 
